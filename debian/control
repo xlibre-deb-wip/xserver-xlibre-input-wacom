@@ -13,8 +13,8 @@ Section: x11
 Architecture: any
 Depends: ${xserver:Depends}, ${shlibs:Depends}
 Provides: ${xinpdriver:Provides}
-Replaces: wacom-tools (<< 0.7.9.3-2)
-Conflicts: wacom-tools (<< 0.7.9.3-2)
+Replaces: wacom-tools (<= 0.8.3.2-1)
+Conflicts: wacom-tools (<= 0.8.3.2-1)
 Description: X.Org X server -- Wacom input driver
  This package provides the X.Org driver for Wacom tablet devices.
 
