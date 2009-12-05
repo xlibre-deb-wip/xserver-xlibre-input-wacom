@@ -1,6 +1,6 @@
 /*
  * Copyright 1995-2002 by Frederic Lepied, France. <Lepied@XFree86.org>
- * Copyright 2002-2008 by Ping Cheng, Wacom Technology. <pingc@wacom.com>		
+ * Copyright 2002-2009 by Ping Cheng, Wacom Technology. <pingc@wacom.com>
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -22,7 +22,6 @@
 #endif
 
 #include "xf86Wacom.h"
-/*#include "wcmSerial.h"*/
 #include "wcmFilter.h"
 
 #define WC_ISDV4_QUERY "*"       /* ISDV4 query command */
@@ -63,6 +62,20 @@ static int xf86WcmWriteWait(int fd, const char* request);
 	};
 
 /*****************************************************************************
+ * XFree86 V4 Functions
+ ****************************************************************************/
+
+static int xf86WcmWait(int t)
+{
+	int err = xf86WaitForInput(-1, ((t) * 1000));
+	if (err != -1)
+		return Success;
+
+	xf86Msg(X_ERROR, "Wacom select error : %s\n", strerror(errno));
+	return err;
+}
+
+/*****************************************************************************
  * xf86WcmSerialValidate -- validates serial packet; returns 0 on success,
  *   positive number of bytes to skip on error.
  ****************************************************************************/
@@ -79,8 +92,9 @@ static int xf86WcmSerialValidate(WacomCommonPtr common, const unsigned char* dat
 		{
 			bad = 1;
 			if (i!=0 && (data[i] & HEADER_BIT)) {
-				xf86Msg(X_ERROR, "xf86WcmSerialValidate: bad magic at %d "
-					"v=%x l=%d\n", i, data[i], common->wcmPktLength);
+				xf86Msg(X_WARNING, "xf86WcmSerialValidate: "
+					"bad magic at %d v=%x l=%d\n", i,
+					data[i], common->wcmPktLength);
 				return i;
 			}
 		}
@@ -142,7 +156,8 @@ static int isdv4Query(LocalDevicePtr local, const char* query, char* data)
 	err = xf86WriteSerial(local->fd, WC_ISDV4_STOP, strlen(WC_ISDV4_STOP));
 	if (err == -1)
 	{
-		xf86Msg(X_ERROR, "%s: xf86WcmWrite ISDV4_STOP error : %s\n", local->name, strerror(errno));
+		xf86Msg(X_WARNING, "%s: xf86WcmWrite ISDV4_STOP error : %s\n",
+			 local->name, strerror(errno));
 		return !Success;
 	}
 
@@ -153,13 +168,14 @@ static int isdv4Query(LocalDevicePtr local, const char* query, char* data)
 	/* Send query command to the tablet */
 	if (!xf86WcmWriteWait(local->fd, query))
 	{
-		xf86Msg(X_ERROR, "%s: unable to xf86WcmWrite request %s ISDV4 query command "
-			"after %d tries\n", local->name, query, MAXTRY);
+		xf86Msg(X_WARNING, "%s: unable to xf86WcmWrite request %s "
+			"ISDV4 query command after %d tries\n", local->name,
+			 query, MAXTRY);
 		return !Success;
 	}
 
 	/* Read the control data */
-	if (!xf86WcmWaitForTablet(local->fd, data, 11))
+	if (!xf86WcmWaitForTablet(local->fd, data, WACOM_PKGLEN_TPCCTL))
 	{
 		/* Try 19200 if it is not a touch query */
 		if (common->wcmISDV4Speed != 19200 && strcmp(query, WC_ISDV4_TOUCH_QUERY))
@@ -171,8 +187,9 @@ static int isdv4Query(LocalDevicePtr local, const char* query, char* data)
 		}
 		else
 		{
-			xf86Msg(X_ERROR, "%s: unable to read ISDV4 %s data "
-				"after %d tries at (%d)\n", local->name, query, MAXTRY, common->wcmISDV4Speed);
+			xf86Msg(X_WARNING, "%s: unable to read ISDV4 %s data "
+				"after %d tries at (%d)\n", local->name, query,
+				 MAXTRY, common->wcmISDV4Speed);
 			return !Success;
 		}
 	}
@@ -190,11 +207,13 @@ static int isdv4Query(LocalDevicePtr local, const char* query, char* data)
 		}
 		else
 		{
-			/* Reread the control data since with some vendors it fails the first time */
-			xf86WcmWaitForTablet(local->fd, data, 11);
+			/* Reread the control data since it may fail the first time */
+			xf86WcmWaitForTablet(local->fd, data, WACOM_PKGLEN_TPCCTL);
 			if ( !(data[0] & 0x40) )
 			{
-				xf86Msg(X_ERROR, "%s: ISDV4 control data (%x) error in %s query\n", local->name, data[0], query);
+				xf86Msg(X_WARNING, "%s: ISDV4 control data "
+					"(%x) error in %s query\n",
+					local->name, data[0], query);
 				return !Success;
 			}
 		}
@@ -211,11 +230,8 @@ static void isdv4InitISDV4(WacomCommonPtr common, const char* id, float version)
 {
 	/* set parameters */
 	common->wcmProtocolLevel = 4;
-	common->wcmPktLength = 9;       /* length of a packet 
-					 * device packets are 9 bytes
-					 * resistive touch is 5 bytes
-					 * capacitive touch is 7 bytes 
-					 */
+	/* length of a packet */
+	common->wcmPktLength = WACOM_PKGLEN_TPCPEN;
 
 	/* digitizer X resolution in points/inch */
 	common->wcmResolX = 2540; 	
@@ -238,12 +254,13 @@ static int isdv4GetRanges(LocalDevicePtr local)
 	char data[BUFFER_SIZE];
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr common =	priv->common;
-	char * s;
+	int ret = Success;
 
 	DBG(2, priv->debugLevel, ErrorF("getting ISDV4 Ranges\n"));
 
 	/* Send query command to the tablet */
-	if (isdv4Query(local, WC_ISDV4_QUERY, data) == Success)
+	ret = isdv4Query(local, WC_ISDV4_QUERY, data);
+	if (ret == Success)
 	{
 		/* transducer data */
 		common->wcmMaxZ = ( data[5] | ((data[6] & 0x07) << 7) );
@@ -259,96 +276,113 @@ static int isdv4GetRanges(LocalDevicePtr local)
 		}
 			
 		common->wcmVersion = ( data[10] | (data[9] << 7) );
+
+		/* default to no pen 2FGT if size is undefined */
+		if (!common->wcmMaxX || !common->wcmMaxY)
+			common->tablet_id = 0xE2;
+
+		DBG(2, priv->debugLevel, ErrorF("isdv4GetRanges Pen speed=%d "
+			"maxX=%d maxY=%d maxZ=%d resX=%d resY=%d \n",
+			common->wcmISDV4Speed, common->wcmMaxX, common->wcmMaxY,
+			common->wcmMaxZ, common->wcmResolX, common->wcmResolY));
 	}
-	else
-		return !Success;
 
-	if (common->wcmISDV4Speed != 19200)
+	/* Touch might be supported. Send a touch query command */
+	common->wcmISDV4Speed = 38400;
+	if (isdv4Query(local, WC_ISDV4_TOUCH_QUERY, data) == Success)
 	{
-		/* default to 0x93 (resistive touch) */
-		common->wcmPktLength = 5;
-		common->tablet_id = 0x93;
-
-		/* Touch might be supported. Send a touch query command */
-		if (isdv4Query(local, WC_ISDV4_TOUCH_QUERY, data) == Success)
+		switch (data[2] & 0x07)
 		{
-			/* (data[2] & 0x07) == 0 is for resistive touch */
-			if (!(data[2] & 0x07) && data[1])
-			{
-				common->wcmMaxTouchX = common->wcmMaxTouchY = (int)(1 << data[1]);
-			}
-
-			if ((data[0] & 0x41) && (data[2] & 0x07))
-			{
-				/* tablet model */
-				switch (data[2] & 0x07)
-				{
-					case 0x01:
-						common->wcmPktLength = 7;
-						common->tablet_id = 0x9A;
-					break;
-					case 0x02:
-					case 0x04:
-						common->wcmPktLength = 7;
-						common->tablet_id = 0x9F;
-					break;
-				}
-
-				/* touch logical size for tablet PC with touch */
-				if (data[1])
-				{
-					common->wcmMaxTouchX = common->wcmMaxTouchY = (int)(1 << data[1]);
-				}
-
-				/* Max capacity */
-				common->wcmMaxCapacity = (int)(1 << data[7]);
-
-				if (common->wcmMaxCapacity)
-				{
-					common->wcmCapacityDefault = 3;
-					common->wcmCapacity = 3;
-					common->wcmTouchResolX = common->wcmMaxTouchX / ( 2540 * 
-						((data[3] << 9) | (data[4] << 2) | ((data[2] & 0x60) >> 5)));
-					common->wcmTouchResolX = common->wcmMaxTouchX / ( 2540 * 
-						((data[5] << 9) | (data[6] << 2) | ((data[2] & 0x18) >> 3)));
-				}
-				else
-				{
-					common->wcmCapacityDefault = -1;
-					common->wcmCapacity = -1;
-				}
-			}
+			case 0x00: /* resistive touch & pen */
+				common->wcmPktLength = WACOM_PKGLEN_TOUCH93;
+				common->tablet_id = 0x93;
+				break;
+			case 0x01: /* capacitive touch & pen */
+				common->wcmPktLength = WACOM_PKGLEN_TOUCH9A;
+				common->tablet_id = 0x9A;
+				break;
+			case 0x02: /* resistive touch */
+				common->wcmPktLength = WACOM_PKGLEN_TOUCH93;
+				common->tablet_id = 0x93;
+				break;
+			case 0x03: /* capacitive touch */
+				common->wcmPktLength = WACOM_PKGLEN_TOUCH9A;
+				common->tablet_id = 0x9F;
+				break;
+			case 0x04: /* capacitive touch */
+				common->wcmPktLength = WACOM_PKGLEN_TOUCH9A;
+				common->tablet_id = 0x9F;
+				break;
+			case 0x05:
+				common->wcmPktLength = WACOM_PKGLEN_TOUCH2FG;
+				/* a penabled */
+				if (common->tablet_id == 0x90)
+					common->tablet_id = 0xE3;
+				break;
 		}
 
-		s = xf86FindOptionValue(local->options, "Touch");
-		if ( !s || (strstr(s, "on")) )  /* touch option is on */
+		switch(data[0] & 0x3f)
 		{
-			common->wcmTouch = 1;
+				/* single finger touch */
+			case 0x01:
+				if ((common->tablet_id != 0x93) &&
+					(common->tablet_id != 0x9A) &&
+					(common->tablet_id != 0x9F))
+
+				{
+				    xf86Msg(X_WARNING, "WACOM: %s tablet id(%x)"
+					    " mismatch with data id (0x01) \n",
+					    local->name, common->tablet_id);
+				    return ret;
+				}
+				break;
+				/* 2FGT */
+			case 0x03:
+				if ((common->tablet_id != 0xE2) &&
+						(common->tablet_id != 0xE3))
+				{
+				    xf86Msg(X_WARNING, "WACOM: %s tablet id(%x)"
+					    " mismatch with data id (0x03) \n",
+					    local->name, common->tablet_id);
+				    return ret;
+				}
+				break;
 		}
 
-		/* TouchDefault was off for all devices
-		 * defaults to enable when touch is supported 
-		 */
-		if (common->wcmTouch)
+		/* don't overwrite the default */
+		if (((data[2]& 0x78) | data[3] | data[4] | data[5] | data[6]))
 		{
+			common->wcmMaxTouchX = ((data[3] << 9) |
+				 (data[4] << 2) | ((data[2] & 0x60) >> 5));
+			common->wcmMaxTouchY = ((data[5] << 9) |
+				 (data[6] << 2) | ((data[2] & 0x18) >> 3));
+		}
+		else if (data[1])
+			common->wcmMaxTouchX = common->wcmMaxTouchY =
+				 (int)(1 << data[1]);
+
+		if (data[1])
+		{
+			common->wcmTouchResolX = common->wcmTouchResolY = 10;
 			common->wcmTouchDefault = 1;
 		}
+		else
+			common->wcmTouchDefault = 0;
 
-		if (common->wcmMaxX && common->wcmMaxY && !common->wcmTouchResolX)
-		{
-			/* Some touch tablet don't report physical size */
-			common->wcmTouchResolX = (int)((double)(common->wcmMaxTouchX * 
-				common->wcmResolX) / (double)common->wcmMaxX + 0.5);
-			common->wcmTouchResolY = (int)((double)(common->wcmMaxTouchY * 
-				common->wcmResolY) / (double)common->wcmMaxY + 0.5);
-		}
+		/* update touch info */
+		common->wcmTouch = xf86SetBoolOption(local->options, "Touch",
+			common->wcmTouchDefault);
+
+		common->wcmVersion = ( data[10] | (data[9] << 7) );
+		ret = Success;
+
+		DBG(2, priv->debugLevel, ErrorF("isdv4GetRanges touch speed=%d "
+			"maxTouchX=%d maxTouchY=%d TouchresX=%d TouchresY=%d \n",
+			common->wcmISDV4Speed, common->wcmMaxTouchX,
+			common->wcmMaxTouchY, common->wcmTouchResolX,
+			common->wcmTouchResolY));
 	}
-
-	DBG(2, priv->debugLevel, ErrorF("isdv4GetRanges speed=%d maxX=%d maxY=%d "
-		"maxZ=%d TouchresX=%d TouchresY=%d \n", common->wcmISDV4Speed, 
-		common->wcmMaxX, common->wcmMaxY, common->wcmMaxZ,
-		common->wcmTouchResolX, common->wcmTouchResolY));
-	return Success;
+	return ret;
 }
 
 static int isdv4StartTablet(LocalDevicePtr local)
@@ -372,65 +406,32 @@ static int isdv4Parse(LocalDevicePtr local, const unsigned char* data)
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr common = priv->common;
 	WacomDeviceState* last = &common->wcmChannel[0].valid.state;
+	WacomDeviceState* lastTemp = &common->wcmChannel[1].valid.state;
 	WacomDeviceState* ds;
 	int n, cur_type, channel = 0;
-	static int touchInProx;
 
 	DBG(10, common->debugLevel, ErrorF("isdv4Parse \n"));
 
-	/* determine the type of message (touch or stylus)*/
-	if (data[0] & 0x18) /* not a pen */
+	/* determine the type of message (touch or stylus) */
+	if (data[0] & 0x10) /* a touch data */
 	{
-		if ((last->device_id != TOUCH_DEVICE_ID && last->device_id && last->proximity ) || 
-				!common->wcmTouch )
+		if ((last->device_id != TOUCH_DEVICE_ID && last->device_id &&
+				 last->proximity ) || !common->wcmTouch)
 		{
-			if ((data[0] & 0x10) && (!(data[0] & 0x01))) /* a touch out-prox data */
-				touchInProx = 0;
-			else
-				touchInProx = 1;
-
 			/* ignore touch event */
 			return common->wcmPktLength;
-		}
-		else
-		{
-			if (data[0] & 0x10) /* a touch data */
-			{
-				if (!touchInProx)
-				{
-					channel = 1;
-				} 
-				else if (!(data[0] & 0x01)) /* touch out-prox */
-				{
-					touchInProx = 0;
-					channel = 1;
-				} 
-				else
-				{
-					/* ignore touch event */
-					return common->wcmPktLength;
-				}
-			}
-			else
-			{
-				/* ignore touch event */
-				return common->wcmPktLength;
-			}
 		}
 	}
 	else
 	{
 		/* touch was in control */
-		if (common->wcmChannel[1].valid.state.proximity)
+		if (last->proximity && last->device_id == TOUCH_DEVICE_ID)
 		{
 			/* let touch go */
 			WacomDeviceState out = { 0 };
 			out.device_type = TOUCH_ID;
-			xf86WcmEvent(common, 1, &out);
-			return 0;
+			xf86WcmEvent(common, channel, &out);
 		}
-		common->wcmPktLength = 9;
-		channel = 0;
 	}
 
 	if (common->buffer + common->bufpos - data < common->wcmPktLength)
@@ -439,27 +440,21 @@ static int isdv4Parse(LocalDevicePtr local, const unsigned char* data)
 		return common->wcmPktLength;
 	}
 
-	if ((n = xf86WcmSerialValidate(common,data)) > 0)
+	/* Coordinate data bit check */
+	if (data[0] & 0x40) /* control data */
+		return common->wcmPktLength;
+	else if ((n = xf86WcmSerialValidate(common,data)) > 0)
 		return n;
-	else
-	{
-		/* Coordinate data bit check */
-		if (data[0] & 0x40) /* control data */
-			return common->wcmPktLength;
-	}
 
 	/* pick up where we left off, minus relative values */
 	ds = &common->wcmChannel[channel].work;
 	RESET_RELATIVE(*ds);
 
-	if (common->wcmPktLength == 5 || common->wcmPktLength == 7) /* a touch */
+	if (common->wcmPktLength != WACOM_PKGLEN_TPCPEN) /* a touch */
 	{
-		/* touch without capacity has 5 bytes of data 
-		 * touch with capacity has 7 bytes of data
-		 */
 		ds->x = (((int)data[1]) << 7) | ((int)data[2]);
 		ds->y = (((int)data[3]) << 7) | ((int)data[4]);
-		if (common->wcmPktLength == 7)
+		if (common->wcmPktLength == WACOM_PKGLEN_TOUCH9A)
 		{
 			ds->capacity = (((int)data[5]) << 7) | ((int)data[6]);
 		}
@@ -518,6 +513,26 @@ static int isdv4Parse(LocalDevicePtr local, const unsigned char* data)
 			ds->device_id = ERASER_DEVICE_ID;
 		}
 
+		if (common->wcmPktLength == WACOM_PKGLEN_TOUCH2FG)
+		{
+			if ((data[0] & 0x02) || (!(data[0] & 0x02) &&
+					 lastTemp->proximity))
+			{
+				/* Got 2FGT. Send the first one if received */
+				if (ds->proximity || (!ds->proximity &&
+						 last->proximity))
+					xf86WcmEvent(common, channel, ds);
+
+				channel = 1;
+				ds = &common->wcmChannel[channel].work;
+				RESET_RELATIVE(*ds);
+				ds->x = (((int)data[7]) << 7) | ((int)data[8]);
+				ds->y = (((int)data[9]) << 7) | ((int)data[10]);
+				ds->device_type = TOUCH_ID;
+				ds->device_id = TOUCH_DEVICE_ID;
+				ds->proximity = data[0] & 0x02;
+			}
+		}
 		DBG(8, priv->debugLevel, ErrorF("isdv4Parse %s\n",
 			ds->device_type == ERASER_ID ? "ERASER " :
 			ds->device_type == STYLUS_ID ? "STYLUS" : "NONE"));

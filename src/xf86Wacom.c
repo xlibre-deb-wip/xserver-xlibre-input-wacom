@@ -18,7 +18,8 @@
  */
 
 /*
- * This driver is currently able to handle Wacom IV, V, ISDV4, and bluetooth protocols.
+ * This driver is currently able to handle USB Wacom IV and V, serial ISDV4,
+ * and bluetooth protocols.
  *
  * Wacom V protocol work done by Raph Levien <raph@gtk.org> and
  * Frédéric Lepied <lepied@xfree86.org>.
@@ -29,11 +30,9 @@
  * Brion Vibber <brion@pobox.com>,
  * Aaron Optimizer Digulla <digulla@hepe.com>,
  * Jonathan Layes <jonathan@layes.com>,
- * John Joganic <jej@j-arkadia.com>.
- * Magnus Vigerlöf <Magnus.Vigerlof@ipbo.se>.
- *
- * Many thanks to Peter Hutterer <peter.hutterer@redhat.com> 
- *		for providing Xorg, HAL and freedesktop support
+ * John Joganic <jej@j-arkadia.com>,
+ * Magnus Vigerlöf <Magnus.Vigerlof@ipbo.se>,
+ * Peter Hutterer <peter.hutterer@redhat.com>.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -42,11 +41,14 @@
 
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <linux/serial.h>
 
 #include "xf86Wacom.h"
 
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
 #include <xserver-properties.h>
+#include <X11/extensions/XKB.h>
+#include <xkbsrv.h>
 #endif
 
 void xf86WcmVirtaulTabletPadding(LocalDevicePtr local);
@@ -65,6 +67,7 @@ extern void xf86WcmInitialScreens(LocalDevicePtr local);
 extern void xf86WcmInitialCoordinates(LocalDevicePtr local, int axes);
 
 static int xf86WcmDevOpen(DeviceIntPtr pWcm);
+static int xf86WcmReady(LocalDevicePtr local);
 static void xf86WcmDevReadInput(LocalDevicePtr local);
 static void xf86WcmDevControlProc(DeviceIntPtr device, PtrCtrl* ctrl);
 int xf86WcmDevChangeControl(LocalDevicePtr local, xDeviceCtl * control);
@@ -435,13 +438,6 @@ void xf86WcmInitialCoordinates(LocalDevicePtr local, int axes)
 	return;
 }
 
-/*****************************************************************************
- * xf86WcmRegisterX11Devices --
- *    Register the X11 input devices with X11 core.
- ****************************************************************************/
-
-
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 5
 /* Define our own keymap so we can send key-events with our own device and not
  * rely on inputInfo.keyboard */
 static KeySym keymap[] = {
@@ -571,6 +567,7 @@ static KeySym keymap[] = {
 	/* 0xf6 */  NoSymbol,		NoSymbol,	NoSymbol,	NoSymbol
 };
 
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 5
 static struct { KeySym keysym; CARD8 mask; } keymod[] = {
 	{ XK_Shift_L,	ShiftMask },
 	{ XK_Shift_R,	ShiftMask },
@@ -587,7 +584,7 @@ static struct { KeySym keysym; CARD8 mask; } keymod[] = {
 #endif
 
 /*****************************************************************************
- * xf86WcmInitialprivSize --
+ * xf86WcmInitialToolSize --
  *    Initialize logical size and resolution for individual tool.
  ****************************************************************************/
 
@@ -766,6 +763,27 @@ static int xf86WcmRegisterX11Devices (LocalDevicePtr local)
 			xf86Msg(X_ERROR, "%s: unable to init kbd feedback device struct\n", local->name);
 			return FALSE;
 		}
+#elif GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
+		if (InitKeyboardDeviceStruct(local->dev, NULL, NULL, xf86WcmKbdCtrlCallback)) {
+#define SYMS_PER_KEY 2
+			KeySymsRec syms;
+			CARD8 modmap[MAP_LENGTH];
+			int num_keys = XkbMaxLegalKeyCode - XkbMinLegalKeyCode + 1;
+
+			syms.map = keymap;
+			syms.mapWidth = SYMS_PER_KEY;
+			syms.minKeyCode = XkbMinLegalKeyCode;
+			syms.maxKeyCode = XkbMaxLegalKeyCode;
+
+			memset(modmap, 0, sizeof(modmap));
+			modmap[XkbMinLegalKeyCode + 2] = ShiftMask;
+			XkbApplyMappingChange(local->dev, &syms, syms.minKeyCode, num_keys, NULL, // modmap,
+					serverClient);
+		} else
+		{
+			xf86Msg(X_ERROR, "%s: unable to init kbd device struct\n", local->name);
+			return FALSE;
+		}
 #endif
 		if(InitLedFeedbackClassDeviceStruct (local->dev, xf86WcmKbdLedCallback) == FALSE) {
 			xf86Msg(X_ERROR, "%s: unable to init led feedback device struct\n", local->name);
@@ -889,7 +907,12 @@ Bool xf86WcmIsWacomDevice (char* fname)
 	if (fd < 0)
 		return FALSE;
 
-	ioctl(fd, EVIOCGID, &id);
+	if (ioctl(fd, EVIOCGID, &id) < 0)
+	{
+		SYSCALL(close(fd));
+		return FALSE;
+	}
+
 	SYSCALL(close(fd));
 
 	if (id.vendor == WACOM_VENDOR_ID)
@@ -936,6 +959,66 @@ char *xf86WcmEventAutoDevProbe (LocalDevicePtr local)
 	xf86Msg(X_ERROR, "%s: no Wacom event device found (checked %d nodes, waited %d msec)\n",
 		local->name, i + 1, wait);
 	return FALSE;
+}
+
+/*****************************************************************************
+ * xf86WcmOpen --
+ ****************************************************************************/
+
+static Bool xf86WcmOpen(LocalDevicePtr local)
+{
+	WacomDevicePtr priv = (WacomDevicePtr)local->private;
+	WacomCommonPtr common = priv->common;
+	char id[BUFFER_SIZE];
+	float version;
+	int rc;
+	struct serial_struct ser;
+
+	DBG(1, priv->debugLevel, ErrorF("opening %s\n", common->wcmDevice));
+
+	local->fd = xf86OpenSerial(local->options);
+	if (local->fd < 0)
+	{
+		xf86Msg(X_ERROR, "%s: Error opening %s (%s)\n", local->name,
+			common->wcmDevice, strerror(errno));
+		return !Success;
+	}
+
+	rc = ioctl(local->fd, TIOCGSERIAL, &ser);
+
+	/* we initialized wcmDeviceClasses to USB
+	 * Bluetooth is also considered as USB */
+	if (rc == 0) /* serial device */
+	{
+		/* only ISDV4 are supported on X server 1.7 and later */
+		common->wcmForceDevice=DEVICE_ISDV4;
+		common->wcmDevCls = &gWacomISDV4Device;
+
+		/* Tablet PC buttons on by default */
+		common->wcmTPCButtonDefault = 1;
+	}
+	else
+	{
+		/* Detect USB device class */
+		if ((&gWacomUSBDevice)->Detect(local))
+			common->wcmDevCls = &gWacomUSBDevice;
+		else
+		{
+			xf86Msg(X_ERROR, "%s: xf86WcmOpen found undetectable "
+				" %s \n", local->name, common->wcmDevice);
+			return !Success;
+		}
+	}
+
+	/* Initialize the tablet */
+	if(common->wcmDevCls->Init(local, id, &version) != Success ||
+		xf86WcmInitTablet(local, id, version) != Success)
+	{
+		xf86CloseSerial(local->fd);
+		local->fd = -1;
+		return !Success;
+	}
+	return Success;
 }
 
 /*****************************************************************************
@@ -1005,6 +1088,19 @@ static int xf86WcmDevOpen(DeviceIntPtr pWcm)
 		return FALSE;
 
 	return TRUE;
+}
+
+static int xf86WcmReady(LocalDevicePtr local)
+{
+#ifdef DEBUG
+	WacomDevicePtr priv = (WacomDevicePtr)local->private;
+#endif
+	int n = xf86WaitForInput(local->fd, 0);
+	DBG(10, priv->debugLevel, ErrorF("xf86WcmReady for %s with %d numbers of data\n", local->name, n));
+
+	if (n >= 0) return n ? 1 : 0;
+	xf86Msg(X_ERROR, "%s: select error: %s\n", local->name, strerror(errno));
+	return 0;
 }
 
 /*****************************************************************************
@@ -1083,14 +1179,19 @@ void xf86WcmReadPacket(LocalDevicePtr local)
 	 */
 	if (common->wcmForceDevice == DEVICE_ISDV4 && common->wcmDevCls != &gWacomUSBDevice) 
 	{
-		common->wcmPktLength = 9;
 		data = common->buffer;
-		if ( data[0] & 0x18 )
+		/* choose wcmPktLength if it is not an out-prox event */
+		if (data[0])
+			common->wcmPktLength = WACOM_PKGLEN_TPCPEN;
+
+		if ( data[0] & 0x10 )
 		{
-			if (common->wcmMaxCapacity)
-				common->wcmPktLength = 7;
-			else
-				common->wcmPktLength = 5;
+			/* set touch PktLength */
+			common->wcmPktLength = WACOM_PKGLEN_TOUCH93;
+			if ((common->tablet_id == 0x9A) || (common->tablet_id == 0x9F))
+				common->wcmPktLength = WACOM_PKGLEN_TOUCH9A;
+			if ((common->tablet_id == 0xE2) || (common->tablet_id == 0xE3))
+				common->wcmPktLength = WACOM_PKGLEN_TOUCH2FG;
 		}
 	}
 
@@ -1104,29 +1205,6 @@ void xf86WcmReadPacket(LocalDevicePtr local)
 			break;
 		}
 		pos += cnt;
-
-		if (common->wcmDevCls != &gWacomUSBDevice) 
-		{
-			data = common->buffer + pos;
-			if ( data[0] & 0x18 )
-			{
-				if (common->wcmPktLength == 9)
-				{
-					DBG(1, common->debugLevel, 
-						ErrorF("xf86WcmReadPacket: not a pen data any more \n"));
-					break;	
-				}
-			}
-			else
-			{
-				if (common->wcmPktLength != 9)
-				{
-					DBG(1, common->debugLevel, 
-						ErrorF("xf86WcmReadPacket: not a touch data any more \n"));
-					break;	
-				}
-			}
-		}
 	}
  
 	if (pos)
