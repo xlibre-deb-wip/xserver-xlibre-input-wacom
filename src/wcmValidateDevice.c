@@ -24,16 +24,19 @@
 #include "wcmFilter.h"
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <linux/serial.h>
 
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
 
-int wcmIsAValidType(LocalDevicePtr local, const char *type);
-int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type);
-void wcmHotplugOthers(LocalDevicePtr local);
+Bool wcmIsAValidType(const char *type, unsigned long* keys);
+int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
+		unsigned long* keys);
+void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys);
 int wcmAutoProbeDevice(LocalDevicePtr local);
 int wcmParseOptions(LocalDevicePtr local);
 int wcmIsDuplicate(char* device, LocalDevicePtr local);
+int wcmDeviceTypeKeys(LocalDevicePtr local, unsigned long* keys);
 
 /* xf86WcmCheckSource - Check if there is another source defined this device
  * before or not: don't add the tool by hal/udev if user has defined at least
@@ -154,45 +157,109 @@ static struct
 	{ "pad",    BTN_TOOL_FINGER    }
 };
 
-static Bool checkValidType(const char* type, unsigned long* keys)
+/* validate tool type for device/product */
+Bool wcmIsAValidType(const char* type, unsigned long* keys)
 {
 	int j, ret = FALSE;
+
+	if (!type)
+		return FALSE;
 
 	/* walkthrough all types */
 	for (j = 0; j < ARRAY_SIZE(wcmType); j++)
 	{
 		if (!strcmp(wcmType[j].type, type))
 			if (ISBITSET (keys, wcmType[j].tool))
+			{
 				ret = TRUE;
+				break;
+			}
 	}
 	return ret;
 }
 
-/* validate tool type for device/product */
-int wcmIsAValidType(LocalDevicePtr local, const char* type)
+/* Choose valid types according to device ID */
+int wcmDeviceTypeKeys(LocalDevicePtr local, unsigned long* keys)
 {
-	int ret = 0;
-	int fd = -1;
-	unsigned long keys[NBITS(KEY_MAX)];
-	char* device;
+	int ret = 1, i;
+	int fd = -1, id = 0;
+	char* device, *stopstring;
+	char* str = strstr(local->name, "WACf");
+	struct serial_struct tmp;
 
 	device = xf86SetStrOption(local->options, "Device", NULL);
 
 	SYSCALL(fd = open(device, O_RDONLY));
 	if (fd < 0)
-		return FALSE;
-
-	/* test if the tool is defined in the kernel */
-	if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keys)), keys) < 0)
 	{
-		xf86Msg(X_ERROR, "%s: wcmIsAValidType unable to ioctl key bits.\n",
-			local->name);
-		return FALSE;
+		xf86Msg(X_WARNING, "%s: failed to open %s in "
+			"wcmDeviceTypeKeys.\n", local->name, device);
+		return 0;
+	}
+
+	/* we have tried memset. it doesn't work */
+	for (i=0; i<NBITS(KEY_MAX); i++)
+		keys[i] = 0;
+
+	/* serial ISDV4 devices */
+	if (ioctl(fd, TIOCGSERIAL, &tmp) == 0)
+	{
+		if (str) /* id in name */
+		{
+			str = str + 4;
+			if (str)
+				id = (int)strtol(str, &stopstring, 16);
+
+		}
+		else /* id in file sys/class/tty/%str/device/id */
+		{
+			FILE *file;
+			char sysfs_id[256];
+			str = strstr(device, "ttyS");
+			snprintf(sysfs_id, sizeof(sysfs_id),
+				"/sys/class/tty/%s/device/id", str);
+			file = fopen(sysfs_id, "r");
+
+			/* return true since it falls to default */
+			if (file)
+			{
+				/* make sure we fall to default */
+				if (fscanf(file, "WACf%x\n", &id) <= 0)
+					id = 0;
+
+				fclose(file);
+			}
+		}
+
+		/* default to penabled */
+		keys[LONG(BTN_TOOL_PEN)] |= BIT(BTN_TOOL_PEN);
+		keys[LONG(BTN_TOOL_RUBBER)] |= BIT(BTN_TOOL_RUBBER);
+
+		/* id < 0x008 are only penabled */
+		if (id > 0x007)
+		{
+			keys[LONG(BTN_TOOL_DOUBLETAP)] |= BIT(BTN_TOOL_DOUBLETAP);
+		}
+
+		/* no pen 2FGT */
+		if (id == 0x010)
+		{
+			keys[LONG(BTN_TOOL_PEN)] &= ~BIT(BTN_TOOL_PEN);
+			keys[LONG(BTN_TOOL_RUBBER)] &= ~BIT(BTN_TOOL_RUBBER);
+		}
+	}
+	else /* USB devices */
+	{
+		/* test if the tool is defined in the kernel */
+		if (ioctl(fd, EVIOCGBIT(EV_KEY, (sizeof(unsigned long)
+			 * NBITS(KEY_MAX))), keys) < 0)
+		{
+			xf86Msg(X_ERROR, "%s: wcmDeviceTypeKeys unable to "
+				"ioctl USB key bits.\n", local->name);
+			ret = 0;
+		}
 	}
 	close(fd);
-
-	ret = checkValidType(type, keys);
-
 	return ret;
 }
 
@@ -245,7 +312,7 @@ static void wcmFreeInputOpts(InputOption* opts)
 /**
  * Hotplug one device of the given type.
  * Device has the same options as the "parent" device, type is one of
- * erasor, stylus, pad, etc.
+ * erasor, stylus, pad, touch, cursor, etc.
  * Name of the new device is set automatically to "<device name> <type>".
  */
 static void wcmHotplug(LocalDevicePtr local, const char *type)
@@ -259,7 +326,7 @@ static void wcmHotplug(LocalDevicePtr local, const char *type)
 	wcmFreeInputOpts(input_options);
 }
 
-void wcmHotplugOthers(LocalDevicePtr local)
+void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys)
 {
 	int i, skip = 1;
 	char*		device;
@@ -270,7 +337,7 @@ void wcmHotplugOthers(LocalDevicePtr local)
          * need to start at the second one */
 	for (i = 0; i < ARRAY_SIZE(wcmType); i++)
 	{
-		if (wcmIsAValidType(local, wcmType[i].type))
+		if (wcmIsAValidType(wcmType[i].type, keys))
 		{
 			if (skip)
 				skip = 0;
@@ -290,7 +357,8 @@ void wcmHotplugOthers(LocalDevicePtr local)
  * This changes the source to _driver/wacom, all auto-hotplugged devices
  * will have the same source.
  */
-int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type)
+int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
+		unsigned long* keys)
 {
 	char *source = xf86CheckStrOption(local->options, "_source", "");
 	int i;
@@ -306,12 +374,15 @@ int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type)
 	 * for our device */
 	for (i = 0; i < ARRAY_SIZE(wcmType); i++)
 	{
-		if (wcmIsAValidType(local, wcmType[i].type))
+		if (wcmIsAValidType(wcmType[i].type, keys))
 		{
 			*type = strdup(wcmType[i].type);
 			break;
 		}
 	}
+
+	if (!*type)
+		return 0;
 
 	xf86Msg(X_INFO, "%s: type not specified, assuming '%s'.\n", local->name, *type);
 	xf86Msg(X_INFO, "%s: other types will be automatically added.\n", local->name);
@@ -319,11 +390,6 @@ int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type)
 	local->options = xf86AddNewOption(local->options, "Type", *type);
 	local->options = xf86ReplaceStrOption(local->options, "_source", "_driver/wacom");
 
-	/* If a device is hotplugged, the current time is taken as uniq
-	 * stamp for this group of devices. On removal, this helps us
-	 * identify which other devices need to be removed. */
-	local->options = xf86ReplaceIntOption(local->options,"_wacom uniq",
-						currentTime.milliseconds);
 	return 1;
 }
 
@@ -335,10 +401,6 @@ int wcmParseOptions(LocalDevicePtr local)
 	int		i, oldButton;
 	WacomToolPtr    tool = NULL;
 	WacomToolAreaPtr area = NULL;
-
-
-	/* Special option set for auto-hotplugged devices only */
-	priv->uniq = xf86CheckIntOption(local->options, "_wacom uniq", 0);
 
 	/* Optional configuration */
 	priv->debugLevel = xf86SetIntOption(local->options,
@@ -374,24 +436,6 @@ int wcmParseOptions(LocalDevicePtr local)
 	/* Store original local Core flag so it can be changed later */
 	if (local->flags & (XI86_ALWAYS_CORE | XI86_CORE_POINTER))
 		priv->flags |= COREEVENT_FLAG;
-
-	/* ISDV4 support */
-	s = xf86SetStrOption(local->options, "ForceDevice", NULL);
-
-	if (s)
-	{
-		if (xf86NameCmp(s, "ISDV4") == 0)
-		{
-			common->wcmForceDevice=DEVICE_ISDV4;
-			common->wcmDevCls = &gWacomISDV4Device;
-			common->wcmTPCButtonDefault = 1; /* Tablet PC buttons on by default */
-		} else
-		{
-			xf86Msg(X_ERROR, "%s: invalid ForceDevice option '%s'.\n",
-				local->name, s);
-			goto error;
-		}
-	}
 
 	s = xf86SetStrOption(local->options, "Rotate", NULL);
 
@@ -432,10 +476,6 @@ int wcmParseOptions(LocalDevicePtr local)
 	{
 		common->wcmFlags |= RAW_FILTERING_FLAG;
 	}
-
-	if (xf86SetBoolOption(local->options, "USB",
-			(common->wcmDevCls == &gWacomUSBDevice)))
-		common->wcmDevCls = &gWacomUSBDevice;
 
 	/* pressure curve takes control points x1,y1,x2,y2
 	 * values in range from 0..100.
@@ -556,7 +596,7 @@ int wcmParseOptions(LocalDevicePtr local)
 		common->wcmMaxY = xf86SetIntOption(local->options, "MaxY",
 					 common->wcmMaxY);
 	else
-		common->wcmMaxY = xf86SetIntOption(local->options, "MaxY",
+		common->wcmMaxTouchY = xf86SetIntOption(local->options, "MaxY",
 					 common->wcmMaxTouchY);
 
 	common->wcmMaxZ = xf86SetIntOption(local->options, "MaxZ",
@@ -600,18 +640,17 @@ int wcmParseOptions(LocalDevicePtr local)
 	if (common->wcmForceDevice == DEVICE_ISDV4)
         {
 		int val;
-		val = xf86SetIntOption(local->options, "BaudRate", 9600);
+		val = xf86SetIntOption(local->options, "BaudRate", 38400);
 
 		switch(val)
 		{
 			case 38400:
 			case 19200:
-			case 9600:
 				common->wcmISDV4Speed = val;
 				break;
 			default:
 				xf86Msg(X_ERROR, "%s: Illegal speed value "
-					"(must be 9600 or 19200 or 38400).",
+					"(must be 19200 or 38400).",
 					local->name);
 				break;
 		}

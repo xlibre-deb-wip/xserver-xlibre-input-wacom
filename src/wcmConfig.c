@@ -26,15 +26,15 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
-
 extern Bool xf86WcmIsWacomDevice (char* fname);
-extern int wcmIsAValidType(LocalDevicePtr local, const char* type);
+extern Bool wcmIsAValidType(const char* type, unsigned long* keys);
 extern int wcmIsDuplicate(char* device, LocalDevicePtr local);
-extern int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type);
+extern int wcmNeedAutoHotplug(LocalDevicePtr local,
+	const char **type, unsigned long* keys);
 extern int wcmAutoProbeDevice(LocalDevicePtr local);
 extern int wcmParseOptions(LocalDevicePtr local);
-extern void wcmHotplugOthers(LocalDevicePtr local);
+extern void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys);
+extern int wcmDeviceTypeKeys(LocalDevicePtr local, unsigned long* keys);
 
 static int xf86WcmAllocate(LocalDevicePtr local, char* name, int flag);
 
@@ -123,7 +123,7 @@ static int xf86WcmAllocate(LocalDevicePtr local, char* type_name, int flag)
 
 	/* Default button and expresskey values */
 	for (i=0; i<WCM_MAX_BUTTONS; i++)
-		priv->button[i] = (AC_BUTTON | (i + 1));
+		priv->button[i] = i + 1;
 
 	for (i=0; i<WCM_MAX_BUTTONS; i++)
 		for (j=0; j<256; j++)
@@ -342,7 +342,7 @@ static void xf86WcmUninit(InputDriverPtr drv, LocalDevicePtr local, int flags)
 		while(dev)
 		{
 			next = dev->next;
-			if (!dev->isParent && dev->uniq == priv->uniq)
+			if (!dev->isParent)
 			{
 				xf86Msg(X_INFO, "%s: removing dependent device '%s'\n",
 					local->name, dev->local->name);
@@ -422,6 +422,7 @@ static LocalDevicePtr xf86WcmInit(InputDriverPtr drv, IDevPtr dev, int flags)
 	char*		device;
 	static int	numberWacom = 0;
 	int		need_hotplug = 0;
+	unsigned long   keys[NBITS(KEY_MAX)];
 
 	gWacomModule.wcmDrv = drv;
 
@@ -436,15 +437,18 @@ static LocalDevicePtr xf86WcmInit(InputDriverPtr drv, IDevPtr dev, int flags)
 	 */
 	xf86CollectInputOptions(local, default_options, NULL);
 
+	/* initialize supported keys */
+	wcmDeviceTypeKeys(local, keys);
+
 	device = xf86SetStrOption(local->options, "Device", NULL);
 	type = xf86FindOptionValue(local->options, "Type");
-	need_hotplug = wcmNeedAutoHotplug(local, &type);
+	need_hotplug = wcmNeedAutoHotplug(local, &type, keys);
 
 	/* leave the undefined for auto-dev (if enabled) to deal with */
 	if(device)
 	{
-		/* check if the type is valid for the device */
-		if(!wcmIsAValidType(local, type))
+		/* check if the type is valid for those don't need hotplug */
+		if(!need_hotplug && !wcmIsAValidType(type, keys))
 			goto SetupProc_fail;
 
 		/* check if the device has been added */
@@ -493,7 +497,7 @@ static LocalDevicePtr xf86WcmInit(InputDriverPtr drv, IDevPtr dev, int flags)
 	if (need_hotplug)
 	{
 		priv->isParent = 1;
-		wcmHotplugOthers(local);
+		wcmHotplugOthers(local, keys);
 	}
 
 	/* return the LocalDevice */
@@ -503,7 +507,11 @@ SetupProc_fail:
 	xfree(common);
 	xfree(priv);
 	if (local)
-	    xf86DeleteInput(local, 0);
+	{
+		local->private = NULL;
+		xf86DeleteInput(local, 0);
+	}
+
 	return NULL;
 }
 

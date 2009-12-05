@@ -32,6 +32,8 @@
 #include <asm/types.h>
 #include <linux/input.h>
 
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+
 #define MAX_USB_EVENTS 32
 
 /* max number of input events to read in one read call */
@@ -92,6 +94,13 @@
 #define XI_PAD    "PAD"         /* X device name for the Pad */
 #define XI_TOUCH  "TOUCH"       /* X device name for the touch */
 
+/* packet length for individual models */
+#define WACOM_PKGLEN_TOUCH93    5
+#define WACOM_PKGLEN_TOUCH9A    7
+#define WACOM_PKGLEN_TPCPEN     9
+#define WACOM_PKGLEN_TPCCTL     11
+#define WACOM_PKGLEN_TOUCH2FG   13
+
 /******************************************************************************
  * WacomModule - all globals are packed in a single structure to keep the
  *               global namespaces as clean as possible.
@@ -135,11 +144,6 @@ struct _WacomModule
 #define SYSCALL(call) while(((call) == -1) && (errno == EINTR))
 
 #define RESET_RELATIVE(ds) do { (ds).relwheel = 0; } while (0)
-
-int xf86WcmWait(int t);
-int xf86WcmReady(LocalDevicePtr local);
-
-Bool xf86WcmOpen(LocalDevicePtr local);
 
 /* device autoprobing */
 char *xf86WcmEventAutoDevProbe (LocalDevicePtr local);
