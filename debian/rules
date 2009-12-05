@@ -56,6 +56,8 @@ install-arch:
 	cd $(objdir) && $(MAKE) install DESTDIR=$(CURDIR)/debian/$(package)
 	$(RM) debian/$(package)/usr/lib/xorg/modules/input/*.la
 
+	dh_installudev
+
 	echo "xserver:Depends=xserver-xorg-core (>= $(shell cat $(XORG)/serverminver))" > $(XSUB)
 	echo "xinpdriver:Provides=xserver-xorg-input-$(shell cat $(XORG)/inputabiver)" >> $(XSUB)
 
