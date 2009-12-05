@@ -2,6 +2,10 @@ xf86-input-wacom (0.10.2+20091203-1) unstable; urgency=low
 
   * Pull a new upstream snapshot with some fixes for button issues, and more.
   * Add the udev rules back, tweaked for post-hal hotplugging support with X.
+  * Add build-deps for x11proto-kb-dev, libxkbfile-dev.  The new upstream now
+    #includes xorg/xkbstr.h from xserver-xorg-dev, which in current Sid then
+    in turn #includes X11/extensions/XKB.h and X11/extensions/XKBproto.h from
+    x11proto-kb-dev and X11/extensions/XKMformat.h from libxkbfile-dev.
 
  -- Ron Lee <ron@debian.org>  Sat, 05 Dec 2009 23:51:33 +1030
 
