@@ -53,7 +53,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 	{
 		usbDetect,
 		usbWcmInit,
-		xf86WcmReadPacket,
+		wcmReadPacket,
 	};
 
 	static WacomModel usbUnknown =
@@ -84,7 +84,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -100,7 +100,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -116,7 +116,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -132,7 +132,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -148,7 +148,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -164,7 +164,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -180,7 +180,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -196,7 +196,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -244,7 +244,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterIntuos,  /* input filtering recommended */
+		wcmFilterIntuos,  /* input filtering recommended */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -260,7 +260,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterIntuos,  /* input filtering recommended */
+		wcmFilterIntuos,  /* input filtering recommended */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -276,7 +276,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterIntuos,  /* input filtering recommended */
+		wcmFilterIntuos,  /* input filtering recommended */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -292,7 +292,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterIntuos,  /* input filtering recommended */
+		wcmFilterIntuos,  /* input filtering recommended */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -308,7 +308,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -324,7 +324,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterCoord,   /* input filtering */
+		wcmFilterCoord,   /* input filtering */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -340,7 +340,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial);
 		NULL,                 /* link speed unsupported */
 		NULL,                 /* start not supported */
 		usbParse,
-		xf86WcmFilterIntuos,  /* input filtering recommended */
+		wcmFilterIntuos,  /* input filtering recommended */
 		usbDetectConfig,      /* detect hardware buttons etc */
 	};
 
@@ -372,7 +372,7 @@ static Bool usbDetect(LocalDevicePtr local)
 #ifdef DEBUG
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 
-	DBG(1, priv->debugLevel, ErrorF("usbDetect\n"));
+	DBG(1, priv, "\n");
 #endif
 
 	SYSCALL(err = ioctl(local->fd, EVIOCGVERSION, &version));
@@ -429,6 +429,12 @@ static struct
 	{ 0x18, 2540, 2540, &usbBambooFun  }, /* BambooFun 6x8 */
 	{ 0x19, 2032, 2032, &usbBamboo1    }, /* Bamboo1 Medium*/ 
 	{ 0x81, 2032, 2032, &usbGraphire4  }, /* Graphire4 6x8 BlueTooth */
+
+	{ 0xD1, 2540, 2540, &usbBamboo     }, /* CTL-460 */
+	{ 0xD4, 2540, 2540, &usbBamboo     }, /* CTH-461 */
+	{ 0xD3, 2540, 2540, &usbBamboo     }, /* CTL-660 */
+	{ 0xD2, 2540, 2540, &usbBamboo     }, /* CTL-461/S */
+	{ 0xD0, 2540, 2540, &usbBamboo     }, /* Bamboo Touch */
 
 	{ 0x20, 2540, 2540, &usbIntuos     }, /* Intuos 4x5 */
 	{ 0x21, 2540, 2540, &usbIntuos     }, /* Intuos 6x8 */
@@ -488,23 +494,33 @@ static struct
 
 	{ 0x90, 2540, 2540, &usbTabletPC   }, /* TabletPC 0x90 */ 
 	{ 0x93, 2540, 2540, &usbTabletPC   }, /* TabletPC 0x93 */
-	{ 0x9A, 2540, 2540, &usbTabletPC   }  /* TabletPC 0x9A */
+	{ 0x9A, 2540, 2540, &usbTabletPC   }, /* TabletPC 0x9A */
+	{ 0x9F,   10,   10, &usbTabletPC   }, /* CapPlus  0x9F */
+	{ 0xE2,   10,   10, &usbTabletPC   }, /* TabletPC 0xE2 */
+	{ 0xE3, 2540, 2540, &usbTabletPC   }  /* TabletPC 0xE3 */
 };
 
 Bool usbWcmInit(LocalDevicePtr local, char* id, float *version)
 {
 	int i;
 	struct input_id sID;
-	unsigned long keys[NBITS(KEY_MAX)];
+	unsigned long keys[NBITS(KEY_MAX)] = {0};
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr common = priv->common;
 
-	DBG(1, priv->debugLevel, ErrorF("initializing USB tablet\n"));
+	DBG(1, priv, "initializing USB tablet\n");
 	*version = 0.0;
 
 	/* fetch vendor, product, and model name */
 	ioctl(local->fd, EVIOCGID, &sID);
 	ioctl(local->fd, EVIOCGNAME(sizeof(id)), id);
+
+	/* retrieve tool type, device type and buttons from the kernel */
+	if (ioctl(local->fd, EVIOCGBIT(EV_KEY,sizeof(keys)),keys) < 0)
+	{
+		xf86Msg(X_ERROR, "%s: unable to ioctl key bits.\n", local->name);
+		return FALSE;
+	}
 
 	/* vendor is wacom */
 	if (sID.vendor == WACOM_VENDOR_ID)
@@ -519,31 +535,12 @@ Bool usbWcmInit(LocalDevicePtr local, char* id, float *version)
 				common->wcmResolY = WacomModelDesc [i].yRes;
 			}
 
-		if (strstr(common->wcmModel->name, "TabletPC"))
+		if (common->wcmModel &&
+			strstr(common->wcmModel->name, "TabletPC"))
 		{
-			if (common->tablet_id != 0x90)
-			{
-				/* TouchDefault was off for all devices */
-				/* except when touch is supported */
-				common->wcmTouchDefault = 1;
-
-				/* check if touch was turned off in xorg.conf */
-				common->wcmTouch = xf86SetBoolOption(local->options, 
-						"Touch", common->wcmTouchDefault);
-				if ( common->wcmTouch )
-					xf86Msg(X_CONFIG, "%s: Touch is enabled \n", local->name);
-			}
-
-			/* Tablet PC button applied to the whole tablet. Not just one tool */
-			common->wcmTPCButtonDefault = 1; /* Tablet PC buttons on by default */
-			if ( priv->flags & STYLUS_ID )
-			{
-				common->wcmTPCButton = xf86SetBoolOption(local->options, 
-					"TPCButton", common->wcmTPCButtonDefault);
-				if ( common->wcmTPCButton )
-					xf86Msg(X_CONFIG, "%s: Tablet PC buttons are on \n", 
-						local->name);
-			}
+			/* For penabled Tablet PCs, Tablet PC Button
+			 * are on by default */
+			common->wcmTPCButtonDefault = 1;
 		}
 	}
 
@@ -553,12 +550,10 @@ Bool usbWcmInit(LocalDevicePtr local, char* id, float *version)
 		common->wcmResolX = common->wcmResolY = 1016;
 	}
 
-	/* Determine max number of buttons */
-	if (ioctl(local->fd, EVIOCGBIT(EV_KEY,sizeof(keys)),keys) < 0)
-	{
-		xf86Msg(X_ERROR, "%s: unable to ioctl key bits.\n", local->name);
-		return FALSE;
-	}
+	/* check if TPCButton was turned off in xorg.conf for pen */
+	if (priv->flags & STYLUS_ID)
+		common->wcmTPCButton = xf86SetBoolOption(local->options,
+			"TPCButton", common->wcmTPCButtonDefault);
 
 	/* Find out supported button codes - except mouse button codes
 	 * BTN_LEFT and BTN_RIGHT, which are always fixed. */
@@ -614,8 +609,8 @@ static void usbInitProtocol4(WacomCommonPtr common, const char* id,
 int usbWcmGetRanges(LocalDevicePtr local)
 {
 	struct input_absinfo absinfo;
-	unsigned long ev[NBITS(EV_MAX)];
-	unsigned long abs[NBITS(ABS_MAX)];
+	unsigned long ev[NBITS(EV_MAX)] = {0};
+	unsigned long abs[NBITS(ABS_MAX)] = {0};
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr common =	priv->common;
 
@@ -675,7 +670,7 @@ int usbWcmGetRanges(LocalDevicePtr local)
 		common->wcmMaxTouchY = absinfo.maximum;
 
 	/* max finger strip X for tablets with Expresskeys
-	 * or max touch logical X for TabletPCs with touch */
+	 * or touch physical X for TabletPCs with touch */
 	if (ioctl(local->fd, EVIOCGABS(ABS_RX), &absinfo) == 0)
 	{
 		if (IsTouch(priv))
@@ -685,7 +680,7 @@ int usbWcmGetRanges(LocalDevicePtr local)
 	}
 
 	/* max finger strip Y for tablets with Expresskeys
-	 * or max touch logical Y for TabletPCs with touch */
+	 * or touch physical Y for TabletPCs with touch */
 	if (ioctl(local->fd, EVIOCGABS(ABS_RY), &absinfo) == 0)
 	{
 		if (IsTouch(priv))
@@ -727,7 +722,7 @@ static int usbDetectConfig(LocalDevicePtr local)
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr common = priv->common;
 
-	DBG(10, common->debugLevel, ErrorF("usbDetectConfig \n"));
+	DBG(10, common, "\n");
 	if (IsPad (priv))
 		priv->nbuttons = common->npadkeys;
 	else
@@ -752,6 +747,7 @@ static int usbChooseChannel(WacomCommonPtr common, int serial)
 {
 	/* figure out the channel to use based on serial number */
 	int i, channel = -1;
+
 	if (common->wcmProtocolLevel == 4)
 	{
 		/* Protocol 4 doesn't support tool serial numbers */
@@ -814,12 +810,12 @@ static int usbChooseChannel(WacomCommonPtr common, int serial)
 			{
 				common->wcmChannel[i].work.proximity = 0;
 				/* dispatch event */
-				xf86WcmEvent(common, i, &common->wcmChannel[i].work);
+				wcmEvent(common, i, &common->wcmChannel[i].work);
 			}
 		}
-		DBG(1, common->debugLevel, ErrorF("usbParse (device with serial number: %u)"
+		DBG(1, common, "device with serial number: %u"
 			" at %d: Exceeded channel count; ignoring the events.\n",
-			serial, (int)GetTimeInMillis()));
+			serial, (int)GetTimeInMillis());
 	}
 	else
 		common->wcmLastToolSerial = serial;
@@ -834,7 +830,7 @@ static void usbParseEvent(LocalDevicePtr local,
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr common = priv->common;
 
-	DBG(10, common->debugLevel, ErrorF("usbParseEvent \n"));
+	DBG(10, common, "\n");
 	/* store events until we receive the MSC_SERIAL containing
 	 * the serial number; without it we cannot determine the
 	 * correct channel. */
@@ -892,10 +888,10 @@ static void usbParseEvent(LocalDevicePtr local,
 	}
 
 	/* ignore events without information */
-	if (common->wcmEventCnt <= 2)
+	if ((common->wcmEventCnt <= 2) && common->wcmLastToolSerial)
 	{
-		DBG(3, common->debugLevel, ErrorF("%s - usbParse: dropping empty event"
-			" for serial %d\n", local->name, common->wcmLastToolSerial));
+		DBG(3, common, "%s: dropping empty event"
+			" for serial %d\n", local->name, common->wcmLastToolSerial);
 		goto skipEvent;
 	}
 
@@ -927,7 +923,7 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr common = priv->common;
 
-	DBG(6, common->debugLevel, ErrorF("usbParseChannel %d events received\n", common->wcmEventCnt));
+	DBG(6, common, "%d events received\n", common->wcmEventCnt);
 	#define MOD_BUTTONS(bit, value) do { \
 		shift = 1<<bit; \
 		ds->buttons = (((value) != 0) ? \
@@ -935,10 +931,10 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 		} while (0)
 
 	if (common->wcmEventCnt == 1 && !common->wcmEvents->type) {
-		DBG(6, common->debugLevel, ErrorF("usbParseChannel no real events received\n"));
+		DBG(6, common, "no real events received\n");
 		return;
 	}
-	DBG(6, common->debugLevel, ErrorF("usbParseChannel %d events received\n", common->wcmEventCnt));
+	DBG(6, common, "%d events received\n", common->wcmEventCnt);
 
 	/* all USB data operates from previous context except relative values*/
 	ds = &common->wcmChannel[channel].work;
@@ -949,9 +945,9 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 	for (i=0; i<common->wcmEventCnt; ++i)
 	{
 		event = common->wcmEvents + i;
-		DBG(11, common->debugLevel, ErrorF("usbParseChannel "
+		DBG(11, common,
 			"event[%d]->type=%d code=%d value=%d\n",
-			i, event->type, event->code, event->value));
+			i, event->type, event->code, event->value);
 
 		/* absolute events */
 		if (event->type == EV_ABS)
@@ -1006,9 +1002,9 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 				if (common->wcmProtocolLevel == 4)
 					ds->device_id = STYLUS_DEVICE_ID;
 				ds->proximity = (event->value != 0);
-				DBG(6, common->debugLevel, ErrorF(
+				DBG(6, common,
 					"USB stylus detected %x\n",
-					event->code));
+					event->code);
 			}
 			else if (event->code == BTN_TOOL_RUBBER)
 			{
@@ -1019,16 +1015,16 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 				ds->proximity = (event->value != 0);
 				if (ds->proximity)
 					ds->proximity = ERASER_PROX;
-				DBG(6, common->debugLevel, ErrorF(
+				DBG(6, common, 
 					"USB eraser detected %x (value=%d)\n",
-					event->code, event->value));
+					event->code, event->value);
 			}
 			else if ((event->code == BTN_TOOL_MOUSE) ||
 				(event->code == BTN_TOOL_LENS))
 			{
-				DBG(6, common->debugLevel, ErrorF(
+				DBG(6, common, 
 					"USB mouse detected %x (value=%d)\n",
-					event->code, event->value));
+					event->code, event->value);
 				ds->device_type = CURSOR_ID;
 				/* V5 tools use ABS_MISC to report device_id */
 				if (common->wcmProtocolLevel == 4)
@@ -1037,9 +1033,9 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 			}
 			else if (event->code == BTN_TOOL_FINGER)
 			{
-				DBG(6, common->debugLevel, ErrorF(
+				DBG(6, common, 
 					"USB Pad detected %x (value=%d)\n",
-					event->code, event->value));
+					event->code, event->value);
 				ds->device_type = PAD_ID;
 				ds->device_id = PAD_DEVICE_ID;
 				ds->proximity = (event->value != 0);
@@ -1048,9 +1044,9 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 			{
 				WacomChannelPtr pChannel = common->wcmChannel + channel;
 				WacomDeviceState dslast = pChannel->valid.state;
-				DBG(6, common->debugLevel, ErrorF(
+				DBG(6, common, 
 					"USB Touch detected %x (value=%d)\n",
-					event->code, event->value));
+					event->code, event->value);
 				ds->device_type = TOUCH_ID;
 				ds->device_id = TOUCH_DEVICE_ID;
 				ds->proximity = event->value;
@@ -1058,7 +1054,8 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 				if ((ds->proximity && !dslast.proximity) ||
 					    (!ds->proximity && dslast.proximity))
 					ds->sample = (int)GetTimeInMillis();
-				/* left button is always pressed for touch without capacity 
+				/* left button is always pressed for touch without capacity
+				 * when the first finger touch event received.
 				 * For touch with capacity, left button event will be decided
 				 * in wcmCommon.c by capacity threshold
 				 */
@@ -1069,9 +1066,9 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 			{
 				WacomChannelPtr pChannel = common->wcmChannel + channel;
 				WacomDeviceState dslast = pChannel->valid.state;
-				DBG(6, common->debugLevel, ErrorF(
+				DBG(6, common, 
 					"USB Touch second finger detected %x (value=%d)\n",
-					event->code, event->value));
+					event->code, event->value);
 				ds->device_type = TOUCH_ID;
 				ds->device_id = TOUCH_DEVICE_ID;
 				ds->proximity = event->value;
@@ -1118,12 +1115,12 @@ static void usbParseChannel(LocalDevicePtr local, int channel)
 	if (((common->tablet_id == 0xC0) || (common->tablet_id == 0xC2)) && 
 		(ds->device_type == ERASER_ID)) 
 	{
-		DBG(10, common->debugLevel, ErrorF("usbParseChannel "
-			"DTF 720 doesn't support eraser "));
+		DBG(10, common,
+			"DTF 720 doesn't support eraser ");
 		return;
 	}
 
 	/* dispatch event */
-	xf86WcmEvent(common, channel, ds);
+	wcmEvent(common, channel, ds);
 }
 /* vim: set noexpandtab shiftwidth=8: */
