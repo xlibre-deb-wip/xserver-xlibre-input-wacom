@@ -90,7 +90,8 @@ LTLIBRARIES = $(@DRIVER_NAME@_drv_la_LTLIBRARIES)
 @DRIVER_NAME@_drv_la_LIBADD =
 am_@DRIVER_NAME@_drv_la_OBJECTS = xf86Wacom.lo wcmCommon.lo \
 	wcmConfig.lo wcmISDV4.lo wcmFilter.lo wcmTilt2Rotation.lo \
-	wcmUSB.lo wcmXCommand.lo wcmValidateDevice.lo
+	wcmUSB.lo wcmXCommand.lo wcmValidateDevice.lo \
+	wcmTouchFilter.lo
 @DRIVER_NAME@_drv_la_OBJECTS = $(am_@DRIVER_NAME@_drv_la_OBJECTS)
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
@@ -207,6 +208,8 @@ SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 STRIP = @STRIP@
 VERSION = @VERSION@
+X11_CFLAGS = @X11_CFLAGS@
+X11_LIBS = @X11_LIBS@
 XORG_CFLAGS = @XORG_CFLAGS@
 XORG_LIBS = @XORG_LIBS@
 abs_builddir = @abs_builddir@
@@ -279,7 +282,7 @@ INCLUDES = -I$(top_srcdir)/include/
 	wcmCommon.c wcmConfig.c wcmISDV4.c \
 	wcmFilter.c wcmFilter.h xf86WacomDefs.h \
 	wcmTilt2Rotation.c wcmUSB.c wcmXCommand.c \
-	wcmValidateDevice.c
+	wcmValidateDevice.c wcmTouchFilter.c
 
 all: all-am
 
@@ -360,6 +363,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wcmFilter.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wcmISDV4.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wcmTilt2Rotation.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wcmTouchFilter.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wcmUSB.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wcmValidateDevice.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wcmXCommand.Plo@am__quote@

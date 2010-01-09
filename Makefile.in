@@ -228,6 +228,8 @@ SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 STRIP = @STRIP@
 VERSION = @VERSION@
+X11_CFLAGS = @X11_CFLAGS@
+X11_LIBS = @X11_LIBS@
 XORG_CFLAGS = @XORG_CFLAGS@
 XORG_LIBS = @XORG_LIBS@
 abs_builddir = @abs_builddir@
@@ -289,7 +291,7 @@ AUTOMAKE_OPTIONS = foreign
 
 # Ensure headers are installed below $(prefix) for distcheck
 DISTCHECK_CONFIGURE_FLAGS = --with-sdkdir='$${includedir}/xorg'
-SUBDIRS = fdi src man include
+SUBDIRS = fdi src man include tools
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = xorg-wacom.pc
 EXTRA_DIST = ChangeLog GPL
