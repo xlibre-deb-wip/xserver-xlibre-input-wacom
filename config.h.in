@@ -1,6 +1,9 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
+
+#ifndef WACOM_TOOLS
 #include "xorg-server.h"
+#endif
 
 /* Enable debugging code */
 #undef DEBUG

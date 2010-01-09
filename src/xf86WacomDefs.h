@@ -159,6 +159,7 @@ struct _PROPINFO
 
 struct _WacomDeviceRec
 {
+	char *name;		/* Do not move, same offset as common->wcmDevice */
 	/* configuration fields */
 	struct _WacomDeviceRec *next;
 	LocalDevicePtr local;
@@ -169,6 +170,10 @@ struct _WacomDeviceRec
 	int topY;		/* Y top */
 	int bottomX;		/* X bottom */
 	int bottomY;		/* Y bottom */
+	int resolX;             /* X resolution */
+	int resolY;             /* Y resolution */
+	int maxX;	        /* tool logical maxX */
+	int maxY;	        /* tool logical maxY */
 	int sizeX;		/* active X size */
 	int sizeY;		/* active Y size */
 	double factorX;		/* X factor */
@@ -251,6 +256,7 @@ struct _WacomDeviceRec
 	WacomToolAreaPtr toolarea; /* The area defined for this device */
 
 	int isParent;		/* set to 1 if the device is not auto-hotplugged */
+	Atom btn_actions[WCM_MAX_BUTTONS]; /* property handlers to listen to */
 };
 
 /******************************************************************************
@@ -318,10 +324,6 @@ struct _WacomChannel
 
 	WacomDeviceState work;                         /* next state */
 
-	/* the following struct contains the current known state of the
-	 * device channel, as well as the previous MAX_SAMPLES states
-	 * for use in detecting hardware defects, jitter, trends, etc. */
-
 	/* the following union contains the current known state of the
 	 * device channel, as well as the previous MAX_SAMPLES states
 	 * for use in detecting hardware defects, jitter, trends, etc. */
@@ -365,9 +367,11 @@ struct _WacomDeviceClass
 #define DEVICE_ISDV4 		0x000C
 
 #define MAX_CHANNELS 2
+#define MAX_FINGERS  2
 
 struct _WacomCommonRec 
 {
+	/* Do not move wcmDevice, same offset as priv->name */
 	char* wcmDevice;             /* device file name */
 	dev_t min_maj;               /* minor/major number */
 	unsigned char wcmFlags;     /* various flags (handle tilt) */
@@ -423,6 +427,10 @@ struct _WacomCommonRec
 	int wcmTouch;	             /* disable/enable touch event */
 	int wcmTPCButtonDefault;     /* Tablet PC button default */
 	int wcmTouchDefault;	     /* default to disable when not supported */
+	int wcmGesture;	     	     /* disable/enable touch gesture */
+	int wcmGestureDefault;       /* default touch gesture to disable when not supported */
+	int wcmGestureMode;	       /* data is in Gesture Mode? */
+	WacomDeviceState wcmGestureState[MAX_FINGERS]; /* inital state when in gesture mode */
 	int wcmCapacity;	     /* disable/enable capacity */
 	int wcmCapacityDefault;      /* default to -1 when capacity isn't supported/disabled */
 				     /* 3 when capacity is supported */

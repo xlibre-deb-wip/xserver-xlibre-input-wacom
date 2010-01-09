@@ -74,9 +74,16 @@
 #endif
 
 #if DEBUG
-#define DBG(lvl, dLevel, f) do { if ((lvl) <= dLevel) f; } while (0)
+#define DBG(lvl, priv, ...) \
+	do { \
+		if ((lvl) <= priv->debugLevel) { \
+			xf86Msg(X_INFO, "%s (%s): ", \
+				((WacomDeviceRec*)priv)->name, __func__); \
+			xf86Msg(X_NONE, __VA_ARGS__); \
+		} \
+	} while (0)
 #else
-#define DBG(lvl, dLevel, f)
+#define DBG(lvl, priv, ...)
 #endif
 
 /*****************************************************************************
@@ -146,29 +153,29 @@ struct _WacomModule
 #define RESET_RELATIVE(ds) do { (ds).relwheel = 0; } while (0)
 
 /* device autoprobing */
-char *xf86WcmEventAutoDevProbe (LocalDevicePtr local);
+char *wcmEventAutoDevProbe (LocalDevicePtr local);
 
 /* common tablet initialization regime */
 int xf86WcmInitTablet(LocalDevicePtr local, const char* id, float version);
 
 /* standard packet handler */
-void xf86WcmReadPacket(LocalDevicePtr local);
+void wcmReadPacket(LocalDevicePtr local);
 
 /* handles suppression, filtering, and dispatch. */
-void xf86WcmEvent(WacomCommonPtr common, unsigned int channel, const WacomDeviceState* ds);
+void wcmEvent(WacomCommonPtr common, unsigned int channel, const WacomDeviceState* ds);
 
 /* dispatches data to XInput event system */
 void xf86WcmSendEvents(LocalDevicePtr local, const WacomDeviceState* ds);
 
-/* generic area check for wcmConfig.c, xf86Wacom.c, and wcmCommon.c */
-Bool xf86WcmPointInArea(WacomToolAreaPtr area, int x, int y);
-Bool xf86WcmAreaListOverlap(WacomToolAreaPtr area, WacomToolAreaPtr list);
+/* generic area check for xf86Wacom.c, wcmCommon.c and wcmXCommand.c */
+Bool wcmPointInArea(WacomToolAreaPtr area, int x, int y);
+Bool wcmAreaListOverlap(WacomToolAreaPtr area, WacomToolAreaPtr list);
 
 /* Change pad's mode according to it core event status */
 int xf86WcmSetPadCoreMode(LocalDevicePtr local);
 
 /* calculate the proper tablet to screen mapping factor */
-void xf86WcmMappingFactor(LocalDevicePtr local);
+void wcmMappingFactor(LocalDevicePtr local);
 
 /****************************************************************************/
 #endif /* __XF86WACOM_H */

@@ -34,7 +34,7 @@ int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
 		unsigned long* keys);
 void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys);
 int wcmAutoProbeDevice(LocalDevicePtr local);
-int wcmParseOptions(LocalDevicePtr local);
+int wcmParseOptions(LocalDevicePtr local, unsigned long* keys);
 int wcmIsDuplicate(char* device, LocalDevicePtr local);
 int wcmDeviceTypeKeys(LocalDevicePtr local, unsigned long* keys);
 
@@ -239,6 +239,8 @@ int wcmDeviceTypeKeys(LocalDevicePtr local, unsigned long* keys)
 		if (id > 0x007)
 		{
 			keys[LONG(BTN_TOOL_DOUBLETAP)] |= BIT(BTN_TOOL_DOUBLETAP);
+			if (id > 0x0a)
+				keys[LONG(BTN_TOOL_TRIPLETAP)] |= BIT(BTN_TOOL_TRIPLETAP);
 		}
 
 		/* no pen 2FGT */
@@ -351,8 +353,8 @@ void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys)
 /**
  * Return 1 if the device needs auto-hotplugging from within the driver.
  * This is the case if we don't get passed a "type" option (invalid in
- * xorg.conf configurations) and we come from HAL or whatever future config
- * backend.
+ * xorg.conf configurations) and we come from HAL, udev or whatever future
+ * config backend.
  *
  * This changes the source to _driver/wacom, all auto-hotplugged devices
  * will have the same source.
@@ -366,8 +368,7 @@ int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
 	if (*type) /* type specified, don't hotplug */
 		return 0;
 
-	/* Only supporting HAL so far */
-	if (strcmp(source, "server/hal"))
+	if (strcmp(source, "server/hal") && strcmp(source, "server/udev"))
 		return 0;
 
 	/* no type specified, so we need to pick the first one applicable
@@ -393,7 +394,7 @@ int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
 	return 1;
 }
 
-int wcmParseOptions(LocalDevicePtr local)
+int wcmParseOptions(LocalDevicePtr local, unsigned long* keys)
 {
 	WacomDevicePtr  priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr  common = priv->common;
@@ -494,7 +495,7 @@ int wcmParseOptions(LocalDevicePtr local)
 				local->name);
 		else
 		{
-			xf86WcmSetPressureCurve(priv,a,b,c,d);
+			wcmSetPressureCurve(priv,a,b,c,d);
 		}
 	}
 
@@ -616,8 +617,29 @@ int wcmParseOptions(LocalDevicePtr local)
 							 "TPCButton",
 							 common->wcmTPCButtonDefault);
 
-	/* Touch applies to the whole tablet */
-	common->wcmTouch = xf86SetBoolOption(local->options, "Touch", common->wcmTouchDefault);
+	/* a single touch device */
+	if (ISBITSET (keys, BTN_TOOL_DOUBLETAP))
+	{
+		/* TouchDefault was off for all devices
+		 * except when touch is supported */
+		common->wcmTouchDefault = 1;
+	}
+
+	/* 2FG touch device */
+	if (ISBITSET (keys, BTN_TOOL_TRIPLETAP))
+	{
+		/* GestureDefault was off for all devices
+		 * except when multi-touch is supported */
+		common->wcmGestureDefault = 1;
+	}
+
+	/* check if touch was turned off in xorg.conf */
+	common->wcmTouch = xf86SetBoolOption(local->options, "Touch",
+		common->wcmTouchDefault);
+
+	/* Touch gesture applies to the whole tablet */
+	common->wcmGesture = xf86SetBoolOption(local->options, "Gesture",
+			common->wcmGestureDefault);
 
 	/* Touch capacity applies to the whole tablet */
 	common->wcmCapacity = xf86SetBoolOption(local->options, "Capacity", common->wcmCapacityDefault);
@@ -692,7 +714,7 @@ int wcmAutoProbeDevice(LocalDevicePtr local)
 	if ((!common->wcmDevice || !strcmp (common->wcmDevice, "auto-dev")))
 	{
 		common->wcmFlags |= AUTODEV_FLAG;
-		if (! (common->wcmDevice = xf86WcmEventAutoDevProbe (local)))
+		if (! (common->wcmDevice = wcmEventAutoDevProbe (local)))
 		{
 			xf86Msg(X_ERROR, "%s: unable to probe device\n",
 				local->name);
