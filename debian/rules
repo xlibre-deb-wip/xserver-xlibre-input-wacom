@@ -57,7 +57,7 @@ install-arch:
 	$(RM) debian/$(package)/usr/lib/xorg/modules/input/*.la
 	$(RM) -r debian/$(package)/usr/share/hal
 
-	dh_installudev
+	dh_installudev --priority=69
 
 	echo "xserver:Depends=xserver-xorg-core (>= $(shell cat $(XORG)/serverminver))" > $(XSUB)
 	echo "xinpdriver:Provides=xserver-xorg-input-$(shell cat $(XORG)/inputabiver)" >> $(XSUB)
