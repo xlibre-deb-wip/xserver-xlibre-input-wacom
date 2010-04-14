@@ -35,8 +35,8 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 subdir = fdi
-DIST_COMMON = $(dist_fdi_DATA) $(srcdir)/Makefile.am \
-	$(srcdir)/Makefile.in
+DIST_COMMON = $(dist_fdi_DATA) $(dist_xorgconf_DATA) \
+	$(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -74,8 +74,8 @@ am__nobase_list = $(am__nobase_strip_setup); \
 am__base_list = \
   sed '$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;s/\n/ /g' | \
   sed '$$!N;$$!N;$$!N;$$!N;s/\n/ /g'
-am__installdirs = "$(DESTDIR)$(fdidir)"
-DATA = $(dist_fdi_DATA)
+am__installdirs = "$(DESTDIR)$(fdidir)" "$(DESTDIR)$(xorgconfdir)"
+DATA = $(dist_fdi_DATA) $(dist_xorgconf_DATA)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
 ADMIN_MAN_DIR = @ADMIN_MAN_DIR@
@@ -215,6 +215,8 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 fdidir = $(datadir)/hal/fdi/policy/20thirdparty
 dist_fdi_DATA = wacom.fdi
+xorgconfdir = $(libdir)/X11/xorg.conf.d
+dist_xorgconf_DATA = 10-wacom.conf
 all: all-am
 
 .SUFFIXES:
@@ -274,6 +276,26 @@ uninstall-dist_fdiDATA:
 	test -n "$$files" || exit 0; \
 	echo " ( cd '$(DESTDIR)$(fdidir)' && rm -f" $$files ")"; \
 	cd "$(DESTDIR)$(fdidir)" && rm -f $$files
+install-dist_xorgconfDATA: $(dist_xorgconf_DATA)
+	@$(NORMAL_INSTALL)
+	test -z "$(xorgconfdir)" || $(MKDIR_P) "$(DESTDIR)$(xorgconfdir)"
+	@list='$(dist_xorgconf_DATA)'; test -n "$(xorgconfdir)" || list=; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(xorgconfdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(xorgconfdir)" || exit $$?; \
+	done
+
+uninstall-dist_xorgconfDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_xorgconf_DATA)'; test -n "$(xorgconfdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	test -n "$$files" || exit 0; \
+	echo " ( cd '$(DESTDIR)$(xorgconfdir)' && rm -f" $$files ")"; \
+	cd "$(DESTDIR)$(xorgconfdir)" && rm -f $$files
 tags: TAGS
 TAGS:
 
@@ -315,7 +337,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(DATA)
 installdirs:
-	for dir in "$(DESTDIR)$(fdidir)"; do \
+	for dir in "$(DESTDIR)$(fdidir)" "$(DESTDIR)$(xorgconfdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -363,7 +385,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-dist_fdiDATA
+install-data-am: install-dist_fdiDATA install-dist_xorgconfDATA
 
 install-dvi: install-dvi-am
 
@@ -407,21 +429,22 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-dist_fdiDATA
+uninstall-am: uninstall-dist_fdiDATA uninstall-dist_xorgconfDATA
 
 .MAKE: install-am install-strip
 
 .PHONY: all all-am check check-am clean clean-generic clean-libtool \
 	distclean distclean-generic distclean-libtool distdir dvi \
 	dvi-am html html-am info info-am install install-am \
-	install-data install-data-am install-dist_fdiDATA install-dvi \
-	install-dvi-am install-exec install-exec-am install-html \
-	install-html-am install-info install-info-am install-man \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
-	uninstall uninstall-am uninstall-dist_fdiDATA
+	install-data install-data-am install-dist_fdiDATA \
+	install-dist_xorgconfDATA install-dvi install-dvi-am \
+	install-exec install-exec-am install-html install-html-am \
+	install-info install-info-am install-man install-pdf \
+	install-pdf-am install-ps install-ps-am install-strip \
+	installcheck installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic \
+	mostlyclean-libtool pdf pdf-am ps ps-am uninstall uninstall-am \
+	uninstall-dist_fdiDATA uninstall-dist_xorgconfDATA
 
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
