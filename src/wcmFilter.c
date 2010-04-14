@@ -10,7 +10,7 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software 
@@ -21,6 +21,8 @@
 #include <config.h>
 #endif
 
+#include <math.h>
+#include "xf86Wacom.h"
 #include "wcmFilter.h"
 
 /*****************************************************************************
@@ -34,19 +36,31 @@ static int filterOnLine(double x0, double y0, double x1, double y1,
 		double a, double b);
 static void filterLine(int* pCurve, int nMax, int x0, int y0, int x1, int y1);
 static void filterIntuosStylus(WacomCommonPtr common, WacomFilterStatePtr state, WacomDeviceStatePtr ds);
+void wcmTilt2R(WacomDeviceStatePtr ds);
+
+
+/*****************************************************************************
+ * wcmCheckPressureCurveValues -- check pressure curve values for sanity.
+ * Return TRUE if values are sane or FALSE otherwise.
+ ****************************************************************************/
+int wcmCheckPressureCurveValues(int x0, int y0, int x1, int y1)
+{
+	return !((x0 < 0) || (x0 > 100) || (y0 < 0) || (y0 > 100) ||
+		 (x1 < 0) || (x1 > 100) || (y1 < 0) || (y1 > 100));
+}
+
 
 /*****************************************************************************
  * wcmSetPressureCurve -- apply user-defined curve to pressure values
  ****************************************************************************/
-
 void wcmSetPressureCurve(WacomDevicePtr pDev, int x0, int y0,
 	int x1, int y1)
 {
 	int i;
 
 	/* sanity check values */
-	if ((x0 < 0) || (x0 > 100) || (y0 < 0) || (y0 > 100) ||
-		(x1 < 0) || (x1 > 100) || (y1 < 0) || (y1 > 100)) return;
+	if (!wcmCheckPressureCurveValues(x0, y0, x1, y1))
+		return;
 
 	/* if curve is not allocated, do it now. */
 	if (!pDev->pPressCurve)
@@ -284,4 +298,31 @@ int wcmFilterIntuos(WacomCommonPtr common, WacomChannelPtr pChannel,
 
 	return 0; /* lookin' good */
 }
+
+/*****************************************************************************
+ *  wcmTilt2R -
+ *   Converts tilt X and Y to rotation, for Intuos4 mouse for now.
+ *   It can be used for other devices when necessary.
+ ****************************************************************************/
+
+void wcmTilt2R(WacomDeviceStatePtr ds)
+{
+	short tilt_x = ds->tiltx;
+	short tilt_y = ds->tilty;
+	double rotation = 0.0;
+
+	/* other tilt-enabled devices need to apply round() after this call */
+	if (tilt_x || tilt_y)
+		rotation = ((180.0 * atan2(-tilt_x,tilt_y)) / M_PI) + 180.0;
+
+	/* Intuos4 mouse has an (180-5) offset */
+	ds->rotation = round((360.0 - rotation + 180.0 - 5.0) * 5.0);
+		ds->rotation %= 1800;
+
+	if (ds->rotation >= 900)
+		ds->rotation = 1800 - ds->rotation;
+	else
+		ds->rotation = -ds->rotation;
+}
+
 /* vim: set noexpandtab shiftwidth=8: */
