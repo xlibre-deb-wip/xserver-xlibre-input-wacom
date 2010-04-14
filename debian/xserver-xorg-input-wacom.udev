@@ -7,6 +7,16 @@
 # to present users with a standard set of device nodes which
 # they can rely on across the board.
 
+# Catch the serial tablets and tell X that's what they are
+ACTION=="add|change", SUBSYSTEM=="pnp", ATTR{id}=="WACf*", 	\
+	ENV{NAME}="Serial Wacom Tablet",			\
+	ENV{ID_INPUT}="1", ENV{ID_INPUT_TABLET}="1"
+
+ACTION=="add|change", SUBSYSTEM=="pnp", ATTR{id}=="FUJ*",	\
+	ENV{NAME}="Serial Wacom Tablet",			\
+	ENV{ID_INPUT}="1", ENV{ID_INPUT_TABLET}="1"
+
+
 KERNEL!="event[0-9]*", GOTO="wacom_end"
 
 # Port specific link for users of multiple tablets of the same type.
@@ -91,9 +101,6 @@ ATTRS{idVendor}=="056a", ATTRS{idProduct}=="00c7", ENV{WACOM_TYPE}!="touch", SYM
 # but for legacy reasons, we keep the input/wacom link as the generic stylus device.
 ATTRS{idVendor}=="056a", ENV{WACOM_TYPE}!="touch", SYMLINK+="input/wacom"
 ATTRS{idVendor}=="056a", ENV{WACOM_TYPE}=="touch", SYMLINK+="input/wacom-touch"
-
-# Set the driver name for X.Org using udev rather than hal.
-ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TABLET}=="?*", ENV{x11_driver}="wacom"
 
 # Check and repossess the device if a module other than the wacom one
 # is already bound to it.
