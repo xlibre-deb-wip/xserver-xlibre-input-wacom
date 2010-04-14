@@ -14,8 +14,8 @@ Architecture: any
 Depends: ${xserver:Depends}, ${shlibs:Depends}
 Suggests: xinput
 Provides: ${xinpdriver:Provides}
-Replaces: wacom-tools (<< 0.8.3.3)
-Conflicts: wacom-tools (<< 0.8.3.3)
+Replaces: wacom-tools (<< 0.10.0)
+Conflicts: wacom-tools (<< 0.10.0)
 Description: X.Org X server -- Wacom input driver
  This package provides the X.Org driver for Wacom tablet devices.
 
