@@ -1,3 +1,16 @@
+xf86-input-wacom (0.10.5+20100414-1) unstable; urgency=low
+
+  * Replace the hardcoded rotation tables with a single call to atan2.
+  * Many fixes for wheels, buttons, and tabletpc devices.
+  * Fix scrolling issues with Intuos3 by ensuring the pad always operates
+    in relative mode.
+  * Lots of fixes for xsetwacom.
+  * Switch from udev to xorg.conf.d snippets.
+    Add udev rules to claim the serial tablets.
+    Thanks to Timo Aaltonen for passing along patches and testing of these.
+
+ -- Ron Lee <ron@debian.org>  Wed, 14 Apr 2010 22:24:07 +0930
+
 xf86-input-wacom (0.10.3+20100109-1) unstable; urgency=low
 
   * New upstream snapshot, now supports server/udev among many fixes.
