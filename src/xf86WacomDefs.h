@@ -1,6 +1,6 @@
 /*
  * Copyright 1995-2002 by Frederic Lepied, France. <Lepied@XFree86.org>
- * Copyright 2002-2009 by Ping Cheng, Wacom Technology. <pingc@wacom.com>
+ * Copyright 2002-2010 by Ping Cheng, Wacom. <pingc@wacom.com>
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -10,7 +10,7 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software 
@@ -39,19 +39,12 @@
 #define PROXOUT_INTUOS_DISTANCE		10
 #define PROXOUT_GRAPHIRE_DISTANCE	42
 
-#define HEADER_BIT      0x80
-#define ZAXIS_SIGN_BIT  0x40
-#define ZAXIS_BIT       0x04
-#define ZAXIS_BITS      0x3F
-#define POINTER_BIT     0x20
-#define PROXIMITY_BIT   0x40
-#define BUTTON_FLAG     0x08
-#define BUTTONS_BITS    0x78
-#define TILT_SIGN_BIT   0x40
-#define TILT_BITS       0x3F
-
 #ifndef BTN_TOOL_DOUBLETAP
 #define BTN_TOOL_DOUBLETAP 0x14d
+#endif
+
+#ifndef BTN_TOOL_TRIPLETAP
+#define BTN_TOOL_TRIPLETAP 0x14e
 #endif
 
 /* defines to discriminate second side button and the eraser */
@@ -63,6 +56,8 @@
 #define BITS_PER_LONG	(sizeof(long) * 8)
 #define NBITS(x)	((((x)-1)/BITS_PER_LONG)+1)
 #define ISBITSET(x,y)	((x)[LONG(y)] & BIT(y))
+#define SETBIT(x,y)	((x)[LONG(y)] |= BIT(y))
+#define CLEARBIT(x,y)	((x)[LONG(y)] &= ~BIT(y))
 #define OFF(x)		((x)%BITS_PER_LONG)
 #define LONG(x)		((x)/BITS_PER_LONG)
 
@@ -91,12 +86,8 @@ struct _WacomModel
 	void (*Initialize)(WacomCommonPtr common, const char* id, float version);
 	void (*GetResolution)(LocalDevicePtr local);
 	int (*GetRanges)(LocalDevicePtr local);
-	int (*Reset)(LocalDevicePtr local);
-	int (*EnableTilt)(LocalDevicePtr local);
-	int (*EnableSuppress)(LocalDevicePtr local);
-	int (*SetLinkSpeed)(LocalDevicePtr local);
 	int (*Start)(LocalDevicePtr local);
-	int (*Parse)(LocalDevicePtr local, const unsigned char* data);
+	int (*Parse)(LocalDevicePtr local, const unsigned char* data, int len);
 	int (*FilterRaw)(WacomCommonPtr common, WacomChannelPtr pChannel,
 		WacomDeviceStatePtr ds);
 	int (*DetectConfig)(LocalDevicePtr local);
@@ -266,19 +257,6 @@ struct _WacomDeviceRec
 #define MAX_SAMPLES	20
 #define DEFAULT_SAMPLES 4
 
-#define PEN(ds)         ((((ds)->device_id) & 0x07ff) == 0x0022 || \
-                         (((ds)->device_id) & 0x07ff) == 0x0042 || \
-                         (((ds)->device_id) & 0x07ff) == 0x0052)
-#define STROKING_PEN(ds) ((((ds)->device_id) & 0x07ff) == 0x0032)
-#define AIRBRUSH(ds)    ((((ds)->device_id) & 0x07ff) == 0x0112)
-#define MOUSE_4D(ds)    ((((ds)->device_id) & 0x07ff) == 0x0094)
-#define MOUSE_2D(ds)    ((((ds)->device_id) & 0x07ff) == 0x0007)
-#define LENS_CURSOR(ds) ((((ds)->device_id) & 0x07ff) == 0x0096)
-#define INKING_PEN(ds)  ((((ds)->device_id) & 0x07ff) == 0x0012)
-#define STYLUS_TOOL(ds) (PEN(ds) || STROKING_PEN(ds) || INKING_PEN(ds) || \
-			AIRBRUSH(ds))
-#define CURSOR_TOOL(ds) (MOUSE_4D(ds) || LENS_CURSOR(ds) || MOUSE_2D(ds))
-
 struct _WacomDeviceState
 {
 	LocalDevicePtr local;
@@ -345,7 +323,6 @@ struct _WacomDeviceClass
 {
 	Bool (*Detect)(LocalDevicePtr local); /* detect device */
 	Bool (*Init)(LocalDevicePtr local, char* id, float *version);   /* initialize device */
-	void (*Read)(LocalDevicePtr local);   /* reads device */
 };
 
 	extern WacomDeviceClass gWacomUSBDevice;
@@ -379,6 +356,7 @@ struct _WacomCommonRec
 	int tablet_id;		     /* USB tablet ID */
 	int fd;                      /* file descriptor to tablet */
 	int fd_refs;                 /* number of references to fd; if =0, fd is invalid */
+	unsigned long wcmKeys[NBITS(KEY_MAX)]; /* supported tool types for the device */
 
 	/* These values are in tablet coordinates */
 	int wcmMaxX;                 /* tablet max X value */
@@ -396,12 +374,6 @@ struct _WacomCommonRec
 	int wcmMaxDist;              /* tablet max distance value */
 	int wcmMaxtiltX;	     /* styli max tilt in X directory */ 
 	int wcmMaxtiltY;	     /* styli max tilt in Y directory */ 
-
-	/* These values are in user coordinates */
-	int wcmUserResolX;           /* user-defined X resolution */
-	int wcmUserResolY;           /* user-defined Y resolution */
-	int wcmUserResolZ;           /* user-defined Z resolution,
-	                              * value equal to 100% pressure */
 
 	int wcmMaxStripX;            /* Maximum fingerstrip X */
 	int wcmMaxStripY;            /* Maximum fingerstrip Y */
@@ -422,7 +394,6 @@ struct _WacomCommonRec
 
 	WacomDeviceClassPtr wcmDevCls; /* device class functions */
 	WacomModelPtr wcmModel;        /* model-specific functions */
-	char * wcmEraserID;	     /* eraser associated with the stylus */
 	int wcmTPCButton;	     /* set Tablet PC button on/off */
 	int wcmTouch;	             /* disable/enable touch event */
 	int wcmTPCButtonDefault;     /* Tablet PC button default */

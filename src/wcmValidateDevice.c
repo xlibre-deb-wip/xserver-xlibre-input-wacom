@@ -1,5 +1,5 @@
 /*
- * Copyright 2009 by Ping Cheng, Wacom. <pingc@wacom.com>
+ * Copyright 2009 - 2010 by Ping Cheng, Wacom. <pingc@wacom.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -9,7 +9,7 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
@@ -24,25 +24,13 @@
 #include "wcmFilter.h"
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <linux/serial.h>
+#include <unistd.h>
 
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
-
-
-Bool wcmIsAValidType(const char *type, unsigned long* keys);
-int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
-		unsigned long* keys);
-void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys);
-int wcmAutoProbeDevice(LocalDevicePtr local);
-int wcmParseOptions(LocalDevicePtr local, unsigned long* keys);
-int wcmIsDuplicate(char* device, LocalDevicePtr local);
-int wcmDeviceTypeKeys(LocalDevicePtr local, unsigned long* keys);
-
-/* xf86WcmCheckSource - Check if there is another source defined this device
+/* wcmCheckSource - Check if there is another source defined this device
  * before or not: don't add the tool by hal/udev if user has defined at least
  * one tool for the device in xorg.conf. One device can have multiple tools
  * with the same type to individualize tools with serial number or areas */
-static Bool xf86WcmCheckSource(LocalDevicePtr local, dev_t min_maj)
+static Bool wcmCheckSource(LocalDevicePtr local, dev_t min_maj)
 {
 	int match = 0;
 	char* device;
@@ -86,6 +74,9 @@ static Bool xf86WcmCheckSource(LocalDevicePtr local, dev_t min_maj)
  * Open the device and check it's major/minor, then compare this with every
  * other wacom device listed in the config. If they share the same
  * major/minor and the same source/type, fail.
+ * This is to detect duplicate devices if a device was added once through
+ * the xorg.conf and is then hotplugged through the server backend (HAL,
+ * udev). In this case, the hotplugged one fails.
  */
 int wcmIsDuplicate(char* device, LocalDevicePtr local)
 {
@@ -93,21 +84,8 @@ int wcmIsDuplicate(char* device, LocalDevicePtr local)
 	int isInUse = 0;
 	char* lsource = xf86CheckStrOption(local->options, "_source", "");
 
-	local->fd = -1;
-
 	/* always allow xorg.conf defined tools to be added */
 	if (!strlen(lsource)) goto ret;
-
-	/* open the port */
-        SYSCALL(local->fd = open(device, O_RDONLY, 0));
-	if (local->fd < 0)
-	{
-		/* can not open the device */
-		xf86Msg(X_ERROR, "%s: Unable to open Wacom device \"%s\".\n",
-			local->name, device);
-		isInUse = 1;
-		goto ret;
-	}
 
 	if (fstat(local->fd, &st) == -1)
 	{
@@ -122,7 +100,7 @@ int wcmIsDuplicate(char* device, LocalDevicePtr local)
 	if (st.st_rdev)
 	{
 		/* device matches with another added port */
-		if (xf86WcmCheckSource(local, st.st_rdev))
+		if (wcmCheckSource(local, st.st_rdev))
 		{
 			isInUse = 3;
 			goto ret;
@@ -136,11 +114,6 @@ int wcmIsDuplicate(char* device, LocalDevicePtr local)
 		isInUse = 4;
 	}
 ret:
-	if (local->fd >= 0)
-	{
-		close(local->fd);
-		local->fd = -1;
-	}
 	return isInUse;
 }
 
@@ -158,9 +131,12 @@ static struct
 };
 
 /* validate tool type for device/product */
-Bool wcmIsAValidType(const char* type, unsigned long* keys)
+Bool wcmIsAValidType(LocalDevicePtr local, const char* type)
 {
 	int j, ret = FALSE;
+	WacomDevicePtr priv = (WacomDevicePtr)local->private;
+	WacomCommonPtr common = priv->common;
+	char* dsource = xf86CheckStrOption(local->options, "_source", "");
 
 	if (!type)
 		return FALSE;
@@ -169,99 +145,35 @@ Bool wcmIsAValidType(const char* type, unsigned long* keys)
 	for (j = 0; j < ARRAY_SIZE(wcmType); j++)
 	{
 		if (!strcmp(wcmType[j].type, type))
-			if (ISBITSET (keys, wcmType[j].tool))
+		{
+			if (ISBITSET (common->wcmKeys, wcmType[j].tool))
 			{
 				ret = TRUE;
 				break;
 			}
+			else if (!strlen(dsource)) /* an user defined type */
+			{
+				/* assume it is a valid type */
+				SETBIT(common->wcmKeys, wcmType[j].tool);
+				ret = TRUE;
+				break;
+			}
+		}
 	}
 	return ret;
 }
 
-/* Choose valid types according to device ID */
-int wcmDeviceTypeKeys(LocalDevicePtr local, unsigned long* keys)
+/* Choose valid types according to device ID. */
+int wcmDeviceTypeKeys(LocalDevicePtr local)
 {
-	int ret = 1, i;
-	int fd = -1, id = 0;
-	char* device, *stopstring;
-	char* str = strstr(local->name, "WACf");
-	struct serial_struct tmp;
-
-	device = xf86SetStrOption(local->options, "Device", NULL);
-
-	SYSCALL(fd = open(device, O_RDONLY));
-	if (fd < 0)
-	{
-		xf86Msg(X_WARNING, "%s: failed to open %s in "
-			"wcmDeviceTypeKeys.\n", local->name, device);
-		return 0;
-	}
-
-	/* we have tried memset. it doesn't work */
-	for (i=0; i<NBITS(KEY_MAX); i++)
-		keys[i] = 0;
+	int ret = 1;
+	WacomDevicePtr priv = local->private;
 
 	/* serial ISDV4 devices */
-	if (ioctl(fd, TIOCGSERIAL, &tmp) == 0)
-	{
-		if (str) /* id in name */
-		{
-			str = str + 4;
-			if (str)
-				id = (int)strtol(str, &stopstring, 16);
+	priv->common->tablet_id = isdv4ProbeKeys(local);
+	if (!priv->common->tablet_id) /* USB devices */
+		priv->common->tablet_id = usbProbeKeys(local);
 
-		}
-		else /* id in file sys/class/tty/%str/device/id */
-		{
-			FILE *file;
-			char sysfs_id[256];
-			str = strstr(device, "ttyS");
-			snprintf(sysfs_id, sizeof(sysfs_id),
-				"/sys/class/tty/%s/device/id", str);
-			file = fopen(sysfs_id, "r");
-
-			/* return true since it falls to default */
-			if (file)
-			{
-				/* make sure we fall to default */
-				if (fscanf(file, "WACf%x\n", &id) <= 0)
-					id = 0;
-
-				fclose(file);
-			}
-		}
-
-		/* default to penabled */
-		keys[LONG(BTN_TOOL_PEN)] |= BIT(BTN_TOOL_PEN);
-		keys[LONG(BTN_TOOL_RUBBER)] |= BIT(BTN_TOOL_RUBBER);
-
-		/* id < 0x008 are only penabled */
-		if (id > 0x007)
-		{
-			keys[LONG(BTN_TOOL_DOUBLETAP)] |= BIT(BTN_TOOL_DOUBLETAP);
-			if (id > 0x0a)
-				keys[LONG(BTN_TOOL_TRIPLETAP)] |= BIT(BTN_TOOL_TRIPLETAP);
-		}
-
-		/* no pen 2FGT */
-		if (id == 0x010)
-		{
-			keys[LONG(BTN_TOOL_PEN)] &= ~BIT(BTN_TOOL_PEN);
-			keys[LONG(BTN_TOOL_RUBBER)] &= ~BIT(BTN_TOOL_RUBBER);
-		}
-	}
-	else /* USB devices */
-	{
-		/* test if the tool is defined in the kernel */
-		if (ioctl(fd, EVIOCGBIT(EV_KEY, (sizeof(unsigned long)
-			 * NBITS(KEY_MAX))), keys) < 0)
-		{
-			xf86Msg(X_ERROR, "%s: wcmDeviceTypeKeys unable to "
-				"ioctl USB key bits.\n", local->name);
-			ret = 0;
-		}
-	}
-	close(fd);
 	return ret;
 }
 
@@ -324,11 +236,15 @@ static void wcmHotplug(LocalDevicePtr local, const char *type)
 
 	input_options = wcmOptionDupConvert(local, type);
 
-	NewInputDeviceRequest(input_options, &dev);
+	NewInputDeviceRequest(input_options,
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 9
+				NULL,
+#endif
+				&dev);
 	wcmFreeInputOpts(input_options);
 }
 
-void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys)
+void wcmHotplugOthers(LocalDevicePtr local)
 {
 	int i, skip = 1;
 	char*		device;
@@ -339,7 +255,7 @@ void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys)
          * need to start at the second one */
 	for (i = 0; i < ARRAY_SIZE(wcmType); i++)
 	{
-		if (wcmIsAValidType(wcmType[i].type, keys))
+		if (wcmIsAValidType(local, wcmType[i].type))
 		{
 			if (skip)
 				skip = 0;
@@ -359,8 +275,7 @@ void wcmHotplugOthers(LocalDevicePtr local, unsigned long* keys)
  * This changes the source to _driver/wacom, all auto-hotplugged devices
  * will have the same source.
  */
-int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
-		unsigned long* keys)
+int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type)
 {
 	char *source = xf86CheckStrOption(local->options, "_source", "");
 	int i;
@@ -375,7 +290,7 @@ int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
 	 * for our device */
 	for (i = 0; i < ARRAY_SIZE(wcmType); i++)
 	{
-		if (wcmIsAValidType(wcmType[i].type, keys))
+		if (wcmIsAValidType(local, wcmType[i].type))
 		{
 			*type = strdup(wcmType[i].type);
 			break;
@@ -394,7 +309,7 @@ int wcmNeedAutoHotplug(LocalDevicePtr local, const char **type,
 	return 1;
 }
 
-int wcmParseOptions(LocalDevicePtr local, unsigned long* keys)
+int wcmParseOptions(LocalDevicePtr local)
 {
 	WacomDevicePtr  priv = (WacomDevicePtr)local->private;
 	WacomCommonPtr  common = priv->common;
@@ -414,25 +329,20 @@ int wcmParseOptions(LocalDevicePtr local, unsigned long* keys)
 		priv->flags |= ABSOLUTE_FLAG;
 	else if (s && (xf86NameCmp(s, "relative") == 0))
 		priv->flags &= ~ABSOLUTE_FLAG;
-	else if (s)
+	else
 	{
-		xf86Msg(X_ERROR, "%s: invalid Mode (should be absolute or "
-			"relative). Using default.\n", local->name);
+		if (s)
+			xf86Msg(X_ERROR, "%s: invalid Mode (should be absolute"
+				" or relative). Using default.\n", local->name);
 
-		/* stylus/eraser defaults to absolute mode
-		 * cursor defaults to relative mode
+		/* If Mode not specified or is invalid then rely on
+		 * Type specific defaults from initialization.
 		 */
-		if (IsCursor(priv))
-			priv->flags &= ~ABSOLUTE_FLAG;
-		else
-			priv->flags |= ABSOLUTE_FLAG;
 	}
 
-	/* Pad is always in relative mode when it's a core device.
-	 * Always in absolute mode when it is not a core device.
-	 */
+	/* Pad is always in relative mode. */
 	if (IsPad(priv))
-		xf86WcmSetPadCoreMode(local);
+		priv->flags &= ~ABSOLUTE_FLAG;
 
 	/* Store original local Core flag so it can be changed later */
 	if (local->flags & (XI86_ALWAYS_CORE | XI86_CORE_POINTER))
@@ -468,15 +378,11 @@ int wcmParseOptions(LocalDevicePtr local, unsigned long* keys)
 
 	if (xf86SetBoolOption(local->options, "Tilt",
 			(common->wcmFlags & TILT_REQUEST_FLAG)))
-	{
 		common->wcmFlags |= TILT_REQUEST_FLAG;
-	}
 
 	if (xf86SetBoolOption(local->options, "RawFilter",
 			(common->wcmFlags & RAW_FILTERING_FLAG)))
-	{
 		common->wcmFlags |= RAW_FILTERING_FLAG;
-	}
 
 	/* pressure curve takes control points x1,y1,x2,y2
 	 * values in range from 0..100.
@@ -485,18 +391,15 @@ int wcmParseOptions(LocalDevicePtr local, unsigned long* keys)
 	 * Slightly raised curve might be 0,5,95,100
 	 */
 	s = xf86SetStrOption(local->options, "PressCurve", NULL);
-	if (s && !IsCursor(priv) && !IsTouch(priv))
+	if (s && (IsStylus(priv) || IsEraser(priv)))
 	{
 		int a,b,c,d;
 		if ((sscanf(s,"%d,%d,%d,%d",&a,&b,&c,&d) != 4) ||
-			(a < 0) || (a > 100) || (b < 0) || (b > 100) ||
-			(c < 0) || (c > 100) || (d < 0) || (d > 100))
+				!wcmCheckPressureCurveValues(a, b, c, d))
 			xf86Msg(X_CONFIG, "%s: PressCurve not valid\n",
 				local->name);
 		else
-		{
 			wcmSetPressureCurve(priv,a,b,c,d);
-		}
 	}
 
 	if (IsCursor(priv))
@@ -585,29 +488,9 @@ int wcmParseOptions(LocalDevicePtr local, unsigned long* keys)
 
 	common->wcmThreshold = xf86SetIntOption(local->options, "Threshold",
 			common->wcmThreshold);
-	if (!IsTouch(priv))
-		common->wcmMaxX = xf86SetIntOption(local->options, "MaxX",
-					 common->wcmMaxX);
-	else
-		common->wcmMaxTouchX = xf86SetIntOption(local->options, "MaxX",
-					 common->wcmMaxTouchX);
-
-
-	if (!IsTouch(priv))
-		common->wcmMaxY = xf86SetIntOption(local->options, "MaxY",
-					 common->wcmMaxY);
-	else
-		common->wcmMaxTouchY = xf86SetIntOption(local->options, "MaxY",
-					 common->wcmMaxTouchY);
 
 	common->wcmMaxZ = xf86SetIntOption(local->options, "MaxZ",
 					   common->wcmMaxZ);
-	common->wcmUserResolX = xf86SetIntOption(local->options, "ResolutionX",
-						 common->wcmUserResolX);
-	common->wcmUserResolY = xf86SetIntOption(local->options, "ResolutionY",
-						 common->wcmUserResolY);
-	common->wcmUserResolZ = xf86SetIntOption(local->options, "ResolutionZ",
-						 common->wcmUserResolZ);
 	if (xf86SetBoolOption(local->options, "ButtonsOnly", 0))
 		priv->flags |= BUTTONS_ONLY_FLAG;
 
@@ -618,7 +501,7 @@ int wcmParseOptions(LocalDevicePtr local, unsigned long* keys)
 							 common->wcmTPCButtonDefault);
 
 	/* a single touch device */
-	if (ISBITSET (keys, BTN_TOOL_DOUBLETAP))
+	if (ISBITSET (common->wcmKeys, BTN_TOOL_DOUBLETAP))
 	{
 		/* TouchDefault was off for all devices
 		 * except when touch is supported */
@@ -626,7 +509,7 @@ int wcmParseOptions(LocalDevicePtr local, unsigned long* keys)
 	}
 
 	/* 2FG touch device */
-	if (ISBITSET (keys, BTN_TOOL_TRIPLETAP))
+	if (ISBITSET (common->wcmKeys, BTN_TOOL_TRIPLETAP))
 	{
 		/* GestureDefault was off for all devices
 		 * except when multi-touch is supported */

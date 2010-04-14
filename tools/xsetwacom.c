@@ -9,7 +9,7 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
@@ -602,7 +602,9 @@ static param_t parameters[] =
 		.name = "SBottomX2",
 		.desc = "Screen 2 right coordinate in pixels. ",
 		.prop_name = WACOM_PROP_SCREENAREA,
+		.prop_offset = 10,
 		.prop_format = 32,
+		.prop_flags = PROP_FLAG_READONLY
 	},
 	{
 		.name = "SBottomY2",
@@ -1062,6 +1064,10 @@ static char *convert_specialkey(const char *modifier)
 		{"lctrl", "Control_L"},
 		{"rctrl", "Control_R"},
 
+		{"meta", "Meta_L"},
+		{"lmeta", "Meta_L"},
+		{"rmeta", "Meta_R"},
+
 		{"alt", "Alt_L"},
 		{"lalt", "Alt_L"},
 		{"ralt", "Alt_R"},
@@ -1103,6 +1109,8 @@ static int is_modifier(const char* modifier)
 		"Alt_R",
 		"Shift_L",
 		"Shift_R",
+		"Meta_L",
+		"Meta_R",
 		NULL,
 	};
 
@@ -1116,6 +1124,76 @@ static int is_modifier(const char* modifier)
 	}
 
 	return 0;
+}
+
+static int special_map_keystrokes(int argc, char **argv, unsigned long *ndata, unsigned long* data);
+static int special_map_button(int argc, char **argv, unsigned long *ndata, unsigned long* data);
+
+/* Valid keywords for the --set ButtonX options */
+struct keywords {
+	const char *keyword;
+	int (*func)(int, char **, unsigned long*, unsigned long *);
+} keywords[] = {
+	{"key", special_map_keystrokes},
+	{"button", special_map_button},
+	{ NULL, NULL }
+};
+
+static inline int is_valid_keyword(const char *keyword)
+{
+	struct keywords *kw = keywords;
+
+	while(kw->keyword)
+	{
+		if (strcmp(keyword, kw->keyword) == 0)
+			return 1;
+		kw++;
+	}
+	return 0;
+}
+
+static int special_map_button(int argc, char **argv, unsigned long *ndata, unsigned long *data)
+{
+	int nitems = 0;
+	int i;
+
+	for (i = 0; i < argc; i++)
+	{
+		char *btn = argv[i];
+		int button;
+		int need_press = 0, need_release = 0;
+
+		if (strlen(btn) > 1)
+		{
+			if (is_valid_keyword(btn))
+				break;
+
+			if (sscanf(btn, "%d", &button) != 1)
+				return nitems;
+
+			switch (btn[0])
+			{
+				case '+': need_press = 1; break;
+				case '-': need_release= 1; break;
+				default:
+					  need_press = need_release = 1;
+					  break;
+			}
+		} else
+			need_press = need_release = 1;
+
+		TRACE("Button map %d [%s,%s]\n", abs(button),
+				need_press ?  "press" : "",
+				need_release ?  "release" : "");
+
+		if (need_press)
+			data[*ndata + nitems++] = AC_BUTTON | AC_KEYBTNPRESS | abs(button);
+		if (need_release)
+			data[*ndata + nitems++] = AC_BUTTON | abs(button);
+	}
+
+	*ndata += nitems;
+	return nitems;
 }
 
 /*
@@ -1135,6 +1213,9 @@ static int special_map_keystrokes(int argc, char **argv, unsigned long *ndata, u
 
 		if (strlen(key) > 1)
 		{
+			if (is_valid_keyword(key))
+				break;
+
 			switch(key[0])
 			{
 				case '+':
@@ -1168,9 +1249,15 @@ static int special_map_keystrokes(int argc, char **argv, unsigned long *ndata, u
 
 		ks = XStringToKeysym(key);
 		if (need_press)
-			data[nitems++] = AC_KEY | AC_KEYBTNPRESS | ks;
+			data[*ndata + nitems++] = AC_KEY | AC_KEYBTNPRESS | ks;
 		if (need_release)
-			data[nitems++] = AC_KEY | ks;
+			data[*ndata + nitems++] = AC_KEY | ks;
+
+		TRACE("Key map %ld ('%s') [%s,%s]\n", ks,
+				XKeysymToString(ks),
+				need_press ?  "press" : "",
+				need_release ?  "release" : "");
+
 	}
 
 	*ndata += nitems;
@@ -1193,8 +1280,9 @@ static char** strjoinsplit(int argc, char **argv, int *nwords)
 		if (strlen(buff) + strlen(*argv) + 1 >= sizeof(buff))
 			break;
 
-		strcat(buff, (const char*)(*argv)++);
+		strcat(buff, *argv);
 		strcat(buff, " ");
+		argv++;
 	}
 
 	*nwords = 0;
@@ -1238,14 +1326,6 @@ static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int 
 	int nwords = 0;
 	char **words = NULL;
 
-	struct keywords {
-		const char *keyword;
-		int (*func)(int, char **, unsigned long*, unsigned long *);
-	} keywords[] = {
-		{"key", special_map_keystrokes},
-		{ NULL, NULL }
-	};
-
 	TRACE("Special %s map for device %ld.\n", param->name, dev->device_id);
 
 	if (slen >= strlen(param->name) || strncmp(param->name, "Button", slen))
@@ -1285,12 +1365,22 @@ static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int 
 	words = strjoinsplit(argc, argv, &nwords);
 	for (i = 0; i < nwords; i++)
 	{
-		int j;
-		for (j = 0; keywords[j].keyword; j++)
+		int j = 0;
+		while (keywords[j].keyword && i < nwords)
+		{
+			int parsed = 0;
 			if (strcasecmp(words[i], keywords[j].keyword) == 0)
-				i += keywords[j].func(nwords - i - 1,
-						      &words[i + 1],
-						      &nitems, data);
+			{
+				parsed = keywords[j].func(nwords - i - 1,
+							  &words[i + 1],
+							  &nitems, data);
+				i += parsed;
+			}
+			if (parsed)
+				j = parsed = 0; /* restart with first keyword */
+			else
+				j++;
+		}
 	}
 
 	XChangeDeviceProperty(dpy, dev, prop, XA_INTEGER, 32,
@@ -1305,39 +1395,12 @@ static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int 
 	XFlush(dpy);
 }
 
-/*
-   Supports three variations.
-   xsetwacom set device Button1 1
-	- maps button 1 to logical button 1
-   xsetwacom set device Button1 "Button 5"
-	- maps button 1 to the same logical button button 5 is mapped
-   xsetwacom set device Button1 "key a b c d"
-	- maps button 1 to key events a b c d
- */
-static void map_button(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
+
+static void map_button_simple(Display *dpy, XDevice *dev, param_t* param, int button)
 {
 	int nmap = 256;
 	unsigned char map[nmap];
-	int i, btn_no = 0;
-	int ref_button = -1; /* xsetwacom set <name> Button1 "Button 5" */
-
-	if (argc <= 0)
-		return;
-
-	TRACE("Mapping %s for device %ld.\n", param->name, dev->device_id);
-
-	for(i = 0; i < strlen(argv[0]); i++)
-	{
-		if (!isdigit(argv[0][i]))
-		{
-			ref_button = get_button_number_from_string(argv[0]);
-			if (ref_button != -1)
-				break;
-
-			special_map_buttons(dpy, dev, param, argc, argv);
-			return;
-		}
-	}
+	int btn_no = 0;
 
 	btn_no = get_button_number_from_string(param->name);
 	if (btn_no == -1)
@@ -1348,18 +1411,33 @@ static void map_button(Display *dpy, XDevice *dev, param_t* param, int argc, cha
 	{
 		fprintf(stderr, "Button number does not exist on device.\n");
 		return;
-	} else if (ref_button >= nmap)
-	{
-		fprintf(stderr, "Reference button number does not exist on device.\n");
-		return;
 	}
 
-	if (ref_button != -1)
-		map[btn_no - 1] = map[ref_button - 1];
-	else
-		map[btn_no - 1] = atoi(argv[0]);
+	map[btn_no - 1] = button;
 	XSetDeviceButtonMapping(dpy, dev, map, nmap);
 	XFlush(dpy);
+}
+/*
+   Supports three variations.
+   xsetwacom set device Button1 1
+	- maps button 1 to logical button 1
+   xsetwacom set device Button1 "key a b c d"
+	- maps button 1 to key events a b c d
+ */
+static void map_button(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
+{
+	int button;
+
+	if (argc <= 0)
+		return;
+
+	TRACE("Mapping %s for device %ld.\n", param->name, dev->device_id);
+
+	/* --set "device" Button1 3 */
+	if (sscanf(argv[0], "%d", &button) == 1)
+		map_button_simple(dpy, dev, param, button);
+	else
+		special_map_buttons(dpy, dev, param, argc, argv);
 }
 
 static void set_xydefault(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
@@ -1651,7 +1729,7 @@ out:
 
 static void get_mode(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
 {
-	XDeviceInfo *info, *d;
+	XDeviceInfo *info, *d = NULL;
 	int ndevices, i;
 	XValuatorInfoPtr v;
 
@@ -1959,7 +2037,7 @@ int main (int argc, char **argv)
 		{"help", 0, NULL, 0},
 		{"verbose", 0, NULL, 0},
 		{"version", 0, NULL, 0},
-		{"display", 1, (int*)display, 0},
+		{"display", 1, NULL, 'd'},
 		{"shell", 0, NULL, 0},
 		{"xconf", 0, NULL, 0},
 		{"list", 0, NULL, 0},
@@ -1974,7 +2052,7 @@ int main (int argc, char **argv)
 		return 1;
 	}
 
-	while ((c = getopt_long(argc, argv, "hvVd:sx", options, &optidx)) != -1) {
+	while ((c = getopt_long(argc, argv, "+hvVd:sx", options, &optidx)) != -1) {
 		switch(c)
 		{
 			case 0:

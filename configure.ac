@@ -20,77 +20,89 @@
 #
 # Process this file with autoconf to produce a configure script
 
-AC_PREREQ(2.57)
+# Initialize Autoconf
+AC_PREREQ([2.60])
 AC_INIT([xf86-input-wacom],
-        0.10.3,
+        [0.10.5],
         [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg],
-        xf86-input-wacom)
-
+        [xf86-input-wacom])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([Makefile.am])
-AC_CONFIG_AUX_DIR(.)
-AM_INIT_AUTOMAKE([dist-bzip2])
+AC_CONFIG_HEADERS([config.h])
 
+# Initialize Automake
+AM_INIT_AUTOMAKE([foreign dist-bzip2])
 AM_MAINTAINER_MODE
 
-# Require xorg-macros: XORG_DEFAULT_OPTIONS
-m4_ifndef([XORG_MACROS_VERSION], [AC_FATAL([must install xorg-macros 1.3 or later before running autoconf/autogen])])
-XORG_MACROS_VERSION(1.3)
-AM_CONFIG_HEADER([config.h])
-
-# Checks for programs.
+# Initialize libtool
 AC_DISABLE_STATIC
 AC_PROG_LIBTOOL
+
+# Checks for programs.
 AC_PROG_CC
+AC_PROG_INSTALL
+
+# Checks for libraries.
+AC_CHECK_LIB([m], [rint])
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_C_INLINE
+AC_TYPE_SIZE_T
+AC_TYPE_UINT16_T
+AC_TYPE_UINT32_T
+AC_TYPE_UINT8_T
+
+# Initialize X.Org macros
+m4_ifndef([XORG_MACROS_VERSION],
+          [m4_fatal([must install xorg-macros 1.4 or later before running autoconf/autogen])])
+XORG_MACROS_VERSION([1.4])
 XORG_DEFAULT_OPTIONS
 
-AH_TOP([
-#ifndef WACOM_TOOLS
-#include "xorg-server.h"
-#endif])
+# Obtain compiler/linker options for the wacom driver
+PKG_CHECK_MODULES(XORG, xorg-server xproto)
+# Obtain compiler/linker options for the xsetwacom tool
+PKG_CHECK_MODULES(X11, x11 xi)
 
-AC_ARG_ENABLE(debug, AS_HELP_STRING([--enable-debug],
-                                    [Enable debugging (default: disabled)]),
-                                    [DEBUGGING=$enableval], [DEBUGGING=no])
+# Define a configure option for code debugging
+AC_ARG_ENABLE(debug,
+              AS_HELP_STRING([--enable-debug],
+                             [Enable debugging (default: disabled)]),
+                             [DEBUGGING=$enableval], [DEBUGGING=no])
 
+# Define the C preprocessor macro DEBUG in config.h
+if test "x$DEBUGGING" = xyes; then
+       AC_DEFINE(DEBUG, 1, [Enable debugging code])
+fi
 
+# Define a configure option for an alternate input module directory
 AC_ARG_WITH(xorg-module-dir,
-            AC_HELP_STRING([--with-xorg-module-dir=DIR],
+            AS_HELP_STRING([--with-xorg-module-dir=DIR],
                            [Default xorg module directory [[default=$libdir/xorg/modules]]]),
             [moduledir="$withval"],
             [moduledir="$libdir/xorg/modules"])
 inputdir=${moduledir}/input
 AC_SUBST(inputdir)
 
-if test "x$DEBUGGING" = xyes; then
-       AC_DEFINE(DEBUG, 1, [Enable debugging code])
-fi
-AM_CONDITIONAL(DEBUG, [test "x$DEBUGGING" = xyes])
-
 # Checks for extensions
 XORG_DRIVER_CHECK_EXT(XINPUT, inputproto)
 
-# Checks for pkg-config packages. We need to be able to override sdkdir
-# to satisfy silly distcheck requirements.
-PKG_CHECK_MODULES(XORG, xorg-server xproto $REQUIRED_MODULES)
-XORG_CFLAGS="$CWARNFLAGS $XORG_CFLAGS"
-AC_ARG_WITH([sdkdir], [],
-    [sdkdir="$withval"],
-    [sdkdir=`$PKG_CONFIG --variable=sdkdir xorg-server`])
+# X Server SDK location is required to install wacom header files
+# This location is also relayed in the xorg-wacom.pc file
+sdkdir=`$PKG_CONFIG --variable=sdkdir xorg-server`
+
+# Workaround overriding sdkdir to be able to create a tarball when user has no
+# write permission in sdkdir. See DISTCHECK_CONFIGURE_FLAGS in Makefile.am
+AC_ARG_WITH([sdkdir], [], [sdkdir="$withval"])
 AC_SUBST([sdkdir])
-
-PKG_CHECK_MODULES(X11, x11 xi)
-
-# Checks for header files.
-AC_HEADER_STDC
 
 DRIVER_NAME=wacom
 AC_SUBST([DRIVER_NAME])
 
-AC_OUTPUT([Makefile
-           fdi/Makefile
-           src/Makefile
-           man/Makefile
-           include/Makefile
-           tools/Makefile
-           xorg-wacom.pc])
+AC_CONFIG_FILES([Makefile
+                 fdi/Makefile
+                 src/Makefile
+                 man/Makefile
+                 include/Makefile
+                 tools/Makefile
+                 xorg-wacom.pc])
+AC_OUTPUT

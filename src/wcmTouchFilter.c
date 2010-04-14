@@ -1,5 +1,5 @@
 /*
- * Copyright 2009 by Ping Cheng, Wacom Technology. <pingc@wacom.com>
+ * Copyright 2009 - 2010 by Ping Cheng, Wacom. <pingc@wacom.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -9,12 +9,16 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
+
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
 
 #include "xf86Wacom.h"
 #include <math.h>
@@ -42,13 +46,8 @@
 /* Defines for Tap Add-a-Finger to Click */
 #define WACOM_TAP_TIME_IN_MS        150
 
-void xf86WcmFingerTapToClick(WacomCommonPtr common);
-
-extern void wcmRotateCoordinates(LocalDevicePtr local, int* x, int* y);
-extern void emitKeysym (DeviceIntPtr keydev, int keysym, int state);
-
-static void xf86WcmFingerScroll(WacomDevicePtr priv);
-static void xf86WcmFingerZoom(WacomDevicePtr priv);
+static void wcmFingerScroll(WacomDevicePtr priv);
+static void wcmFingerZoom(WacomDevicePtr priv);
 
 static double touchDistance(WacomDeviceState ds0, WacomDeviceState ds1)
 {
@@ -99,7 +98,7 @@ static Bool pointsInLineAfter(int p1, int p2)
 	return ret;
 }
 
-static void xf86WcmSwitchLeftClick(WacomDevicePtr priv)
+static void wcmSwitchLeftClick(WacomDevicePtr priv)
 {
 	WacomCommonPtr common = priv->common;
 
@@ -118,7 +117,7 @@ static void xf86WcmSwitchLeftClick(WacomDevicePtr priv)
  *   translate second finger tap to right click
  ****************************************************************************/
 
-void xf86WcmFingerTapToClick(WacomCommonPtr common)
+void wcmFingerTapToClick(WacomCommonPtr common)
 {
 	WacomDevicePtr priv = common->wcmDevices;
 	WacomChannelPtr firstChannel = common->wcmChannel;
@@ -159,7 +158,7 @@ void xf86WcmFingerTapToClick(WacomCommonPtr common)
 					if (!common->wcmGestureMode)
 					{
 						common->wcmGestureMode = GESTURE_TAP_MODE;
-						xf86WcmSwitchLeftClick(priv);
+						wcmSwitchLeftClick(priv);
 					}
 
 					/* right button down */
@@ -188,9 +187,9 @@ void xf86WcmFingerTapToClick(WacomCommonPtr common)
 				if (!common->wcmGestureMode)
 				{
 					common->wcmGestureMode = GESTURE_ZOOM_MODE;
-					xf86WcmSwitchLeftClick(priv);
+					wcmSwitchLeftClick(priv);
 				}
-				xf86WcmFingerZoom(priv);
+				wcmFingerZoom(priv);
 			}
 
 			if ( pointsInLine(ds[0], dsLast[0], &direction) &&
@@ -203,9 +202,9 @@ void xf86WcmFingerTapToClick(WacomCommonPtr common)
 				if (!common->wcmGestureMode)
 				{
 					common->wcmGestureMode = GESTURE_SCROLL_MODE;
-					xf86WcmSwitchLeftClick(priv);
+					wcmSwitchLeftClick(priv);
 				}
-				xf86WcmFingerScroll(priv);
+				wcmFingerScroll(priv);
 			}
 		}
 	}
@@ -227,7 +226,7 @@ skipGesture:
 	}
 }
 
-static void xf86WcmSendVerticalScrollEvent(WacomDevicePtr priv,
+static void wcmSendVerticalScrollEvent(WacomDevicePtr priv,
 		int dist, int up, int dn)
 {
 	int i = 0;
@@ -264,7 +263,7 @@ static void xf86WcmSendVerticalScrollEvent(WacomDevicePtr priv,
 	}
 }
 
-static void xf86WcmSendHorizontalScrollEvent(WacomDevicePtr priv,
+static void wcmSendHorizontalScrollEvent(WacomDevicePtr priv,
 					     int dist, int left, int right)
 {
 	int i = 0;
@@ -301,7 +300,7 @@ static void xf86WcmSendHorizontalScrollEvent(WacomDevicePtr priv,
 	}
 }
 
-static void xf86WcmFingerScroll(WacomDevicePtr priv)
+static void wcmFingerScroll(WacomDevicePtr priv)
 {
 	WacomCommonPtr common = priv->common;
 	WacomChannelPtr firstChannel = common->wcmChannel;
@@ -348,7 +347,7 @@ static void xf86WcmFingerScroll(WacomDevicePtr priv)
 		if (abs(dist) > WACOM_PARA_MOTION_IN_POINT)
 		{
 			gesture = 1;
-			xf86WcmSendVerticalScrollEvent(priv,  dist,
+			wcmSendVerticalScrollEvent(priv,  dist,
 					WCM_SCROLL_UP, WCM_SCROLL_DOWN);
 		}
 
@@ -366,7 +365,7 @@ static void xf86WcmFingerScroll(WacomDevicePtr priv)
 				if (abs(dist) > WACOM_PARA_MOTION_IN_POINT)
 				{
 					gesture = 1;
-					xf86WcmSendHorizontalScrollEvent(priv, dist,
+					wcmSendHorizontalScrollEvent(priv, dist,
 						WCM_SCROLL_LEFT, WCM_SCROLL_RIGHT);
 				}
 			}
@@ -380,7 +379,7 @@ static void xf86WcmFingerScroll(WacomDevicePtr priv)
 	}
 }
 
-static void xf86WcmFingerZoom(WacomDevicePtr priv)
+static void wcmFingerZoom(WacomDevicePtr priv)
 {
 	WacomCommonPtr common = priv->common;
 	WacomChannelPtr firstChannel = common->wcmChannel;
@@ -401,19 +400,19 @@ static void xf86WcmFingerZoom(WacomDevicePtr priv)
 		for (i=0; i<(int)(((double)abs(dist)/
 				(double)WACOM_MOTION_IN_POINT) + 0.5); i++)
 		{
-			emitKeysym (priv->local->dev, XK_Control_L, 1);
+			wcmEmitKeysym (priv->local->dev, XK_Control_L, 1);
 			/* zooming in */
 			if (dist > 0)
 			{
-				emitKeysym (priv->local->dev, XK_plus, 1);
-				emitKeysym (priv->local->dev, XK_plus, 0);
+				wcmEmitKeysym (priv->local->dev, XK_plus, 1);
+				wcmEmitKeysym (priv->local->dev, XK_plus, 0);
 			}
 			else /* zooming out */
 			{
-				emitKeysym (priv->local->dev, XK_minus, 1);
-				emitKeysym (priv->local->dev, XK_minus, 0);
+				wcmEmitKeysym (priv->local->dev, XK_minus, 1);
+				wcmEmitKeysym (priv->local->dev, XK_minus, 0);
 			}
-			emitKeysym (priv->local->dev, XK_Control_L, 0);
+			wcmEmitKeysym (priv->local->dev, XK_Control_L, 0);
 		}
 
 		/* reset initial states */

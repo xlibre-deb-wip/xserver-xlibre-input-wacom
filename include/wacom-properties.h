@@ -9,7 +9,7 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
@@ -69,7 +69,7 @@
 /* BOOL, 1 value */
 #define WACOM_PROP_HOVER "Wacom Hover Click"
 
-/* Atom, 1 value */
+/* Atom, 1 value, read-only */
 #define WACOM_PROP_TOOL_TYPE "Wacom Tool Type"
 
 /* Atom, X values where X is the number of physical buttons.

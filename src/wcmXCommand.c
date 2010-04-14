@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2009 by Ping Cheng, Wacom Technology. <pingc@wacom.com>
+ * Copyright 2007-2010 by Ping Cheng, Wacom. <pingc@wacom.com>
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -9,7 +9,7 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software 
@@ -23,90 +23,49 @@
 
 #include "xf86Wacom.h"
 #include "wcmFilter.h"
-
-extern void xf86WcmInitialCoordinates(LocalDevicePtr local, int axes);
-extern void wcmRotateTablet(LocalDevicePtr local, int value);
-extern void wcmInitialScreens(LocalDevicePtr local);
-
-int xf86WcmDevSwitchModeCall(LocalDevicePtr local, int mode);
-int xf86WcmDevSwitchMode(ClientPtr client, DeviceIntPtr dev, int mode);
-void xf86WcmChangeScreen(LocalDevicePtr local, int value);
-
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 3
-	int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, 
-		XIPropertyValuePtr prop, BOOL checkonly);
-	void InitWcmDeviceProperties(LocalDevicePtr local);
-#endif
+#include <exevents.h>
 
 /*****************************************************************************
- * xf86WcmSetPadCoreMode
- ****************************************************************************/
-
-int xf86WcmSetPadCoreMode(LocalDevicePtr local)
-{
-	WacomDevicePtr priv = (WacomDevicePtr)local->private;
-	int is_core = local->flags & (XI86_ALWAYS_CORE | XI86_CORE_POINTER);
-
-	/* Pad is always in relative mode when it's a core device.
-	 * Always in absolute mode when it is not a core device.
-	 */
-	DBG(10, priv, "%p"
-		" is always in %s mode when it %s core device\n",
-		(void *)local->dev, 
-		!is_core ? "absolute" : "relative", 
-		is_core ? "is" : "isn't");
-	if (is_core)
-		priv->flags &= ~ABSOLUTE_FLAG;
-	else
-		priv->flags |= ABSOLUTE_FLAG;
-	return Success;
-}
-
-/*****************************************************************************
-* xf86WcmDevSwitchModeCall --
+* wcmDevSwitchModeCall --
 *****************************************************************************/
 
-int xf86WcmDevSwitchModeCall(LocalDevicePtr local, int mode)
+int wcmDevSwitchModeCall(LocalDevicePtr local, int mode)
 {
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 	int is_absolute = priv->flags & ABSOLUTE_FLAG;
 
 	DBG(3, priv, "to mode=%d\n", mode);
 
-	/* Pad is always in relative mode when it's a core device.
-	 * Always in absolute mode when it is not a core device.
-	 */
+	/* Pad is always in relative mode.*/
 	if (IsPad(priv))
-		return xf86WcmSetPadCoreMode(local);
+		return (mode == Relative) ? Success : XI_BadMode;
 
 	if ((mode == Absolute) && !is_absolute)
 	{
 		priv->flags |= ABSOLUTE_FLAG;
-		xf86ReplaceStrOption(local->options, "Mode", "Absolute");
-		xf86WcmInitialCoordinates(local, 0);
-		xf86WcmInitialCoordinates(local, 1);
+		wcmInitialCoordinates(local, 0);
+		wcmInitialCoordinates(local, 1);
 	}
 	else if ((mode == Relative) && is_absolute)
 	{
 		priv->flags &= ~ABSOLUTE_FLAG; 
-		xf86ReplaceStrOption(local->options, "Mode", "Relative");
-		xf86WcmInitialCoordinates(local, 0);
-		xf86WcmInitialCoordinates(local, 1);
+		wcmInitialCoordinates(local, 0);
+		wcmInitialCoordinates(local, 1);
 	}
 	else if ( (mode != Absolute) && (mode != Relative))
 	{
 		DBG(10, priv, "invalid mode=%d\n", mode);
-		return BadMatch;
+		return XI_BadMode;
 	}
 
 	return Success;
 }
 
 /*****************************************************************************
-* xf86WcmDevSwitchMode --
+* wcmDevSwitchMode --
 *****************************************************************************/
 
-int xf86WcmDevSwitchMode(ClientPtr client, DeviceIntPtr dev, int mode)
+int wcmDevSwitchMode(ClientPtr client, DeviceIntPtr dev, int mode)
 {
 	LocalDevicePtr local = (LocalDevicePtr)dev->public.devicePrivate;
 #ifdef DEBUG
@@ -116,14 +75,14 @@ int xf86WcmDevSwitchMode(ClientPtr client, DeviceIntPtr dev, int mode)
 		(void *)dev, mode);
 #endif
 	/* Share this call with sendAButton in wcmCommon.c */
-	return xf86WcmDevSwitchModeCall(local, mode);
+	return wcmDevSwitchModeCall(local, mode);
 }
 
 /*****************************************************************************
- * xf86WcmChangeScreen
+ * wcmChangeScreen
  ****************************************************************************/
 
-void xf86WcmChangeScreen(LocalDevicePtr local, int value)
+void wcmChangeScreen(LocalDevicePtr local, int value)
 {
 	WacomDevicePtr priv = (WacomDevicePtr)local->private;
 
@@ -136,8 +95,8 @@ void xf86WcmChangeScreen(LocalDevicePtr local, int value)
 	if (priv->screen_no != -1)
 		priv->currentScreen = priv->screen_no;
 	wcmInitialScreens(local);
-	xf86WcmInitialCoordinates(local, 0);
-	xf86WcmInitialCoordinates(local, 1);
+	wcmInitialCoordinates(local, 0);
+	wcmInitialCoordinates(local, 1);
 }
 
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 3
@@ -223,11 +182,13 @@ void InitWcmDeviceProperties(LocalDevicePtr local)
 	values[0] = common->wcmRotate;
 	prop_rotation = InitWcmAtom(local->dev, WACOM_PROP_ROTATION, 8, 1, values);
 
-	values[0] = 0;
-	values[1] = 0;
-	values[2] = 100;
-	values[3] = 100;
-	prop_pressurecurve = InitWcmAtom(local->dev, WACOM_PROP_PRESSURECURVE, 32, 4, values);
+	if (IsStylus(priv) || IsEraser(priv)) {
+		values[0] = priv->nPressCtrl[0];
+		values[1] = priv->nPressCtrl[1];
+		values[2] = priv->nPressCtrl[2];
+		values[3] = priv->nPressCtrl[3];
+		prop_pressurecurve = InitWcmAtom(local->dev, WACOM_PROP_PRESSURECURVE, 32, 4, values);
+	}
 
 	values[0] = common->tablet_id;
 	values[1] = priv->old_serial;
@@ -235,17 +196,19 @@ void InitWcmDeviceProperties(LocalDevicePtr local)
 	values[3] = priv->serial;
 	prop_serials = InitWcmAtom(local->dev, WACOM_PROP_SERIALIDS, 32, 4, values);
 
-	values[0] = priv->striplup;
-	values[1] = priv->stripldn;
-	values[2] = priv->striprup;
-	values[3] = priv->striprdn;
-	prop_strip_buttons = InitWcmAtom(local->dev, WACOM_PROP_STRIPBUTTONS, 8, 4, values);
+	if (IsPad(priv)) {
+		values[0] = priv->striplup;
+		values[1] = priv->stripldn;
+		values[2] = priv->striprup;
+		values[3] = priv->striprdn;
+		prop_strip_buttons = InitWcmAtom(local->dev, WACOM_PROP_STRIPBUTTONS, 8, 4, values);
 
-	values[0] = priv->relup;
-	values[1] = priv->reldn;
-	values[2] = priv->wheelup;
-	values[3] = priv->wheeldn;
-	prop_wheel_buttons = InitWcmAtom(local->dev, WACOM_PROP_WHEELBUTTONS, 8, 4, values);
+		values[0] = priv->relup;
+		values[1] = priv->reldn;
+		values[2] = priv->wheelup;
+		values[3] = priv->wheeldn;
+		prop_wheel_buttons = InitWcmAtom(local->dev, WACOM_PROP_WHEELBUTTONS, 8, 4, values);
+	}
 
 	values[0] = priv->tvResolution[0];
 	values[1] = priv->tvResolution[1];
@@ -299,7 +262,133 @@ void InitWcmDeviceProperties(LocalDevicePtr local)
 #endif
 }
 
-int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
+/* Change the properties that hold the actual button actions */
+static int wcmSetActionProperties(DeviceIntPtr dev, Atom property,
+				  XIPropertyValuePtr prop, BOOL checkonly)
+{
+	LocalDevicePtr local = (LocalDevicePtr) dev->public.devicePrivate;
+	WacomDevicePtr priv = (WacomDevicePtr) local->private;
+	int i, j;
+
+	DBG(10, priv, "\n");
+
+	/* check all properties used for button actions */
+	for (i = 0; i < ARRAY_SIZE(priv->btn_actions); i++)
+		if (priv->btn_actions[i] == property)
+			break;
+
+	if (i < ARRAY_SIZE(priv->btn_actions))
+	{
+		CARD32 *data;
+		int code;
+		int type;
+
+		if (prop->size >= 255 || prop->format != 32 ||
+				prop->type != XA_INTEGER)
+			return BadMatch;
+
+		data = (CARD32*)prop->data;
+
+		for (j = 0;j < prop->size; j++)
+		{
+			code = data[j] & AC_CODE;
+			type = data[j] & AC_TYPE;
+
+			switch(type)
+			{
+				case AC_KEY:
+					break;
+				case AC_BUTTON:
+					if (code > WCM_MAX_MOUSE_BUTTONS)
+						return BadValue;
+					break;
+				case AC_DISPLAYTOGGLE:
+				case AC_MODETOGGLE:
+				case AC_DBLCLICK:
+					break;
+				default:
+					return BadValue;
+			}
+
+			if (!checkonly)
+			{
+				memset(priv->keys[i], 0, sizeof(priv->keys[i]));
+				for (j = 0; j < prop->size; j++)
+					priv->keys[i][j] = data[j];
+			}
+		}
+	}
+
+	return Success;
+}
+
+/* Change the property that refers to which properties the actual button
+ * actions are stored in */
+static int wcmSetPropertyButtonActions(DeviceIntPtr dev, Atom property,
+				       XIPropertyValuePtr prop, BOOL checkonly)
+{
+	LocalDevicePtr local = (LocalDevicePtr) dev->public.devicePrivate;
+	WacomDevicePtr priv = (WacomDevicePtr) local->private;
+
+	Atom *values;
+	int i, j;
+	XIPropertyValuePtr val;
+
+	DBG(10, priv, "\n");
+
+	if (prop->size != WCM_MAX_MOUSE_BUTTONS || prop->format != 32 ||
+			prop->type != XA_ATOM)
+		return BadMatch;
+
+	/* How this works:
+	 * prop_btnactions has a list of atoms stored. Any atom references
+	 * another property on that device that contains the actual action.
+	 * If this property changes, all action-properties are queried for
+	 * their value and their value is stored in priv->key[button].
+	 *
+	 * If the button is pressed, the actions are executed.
+	 *
+	 * Any button action property needs to be monitored by this property
+	 * handler too.
+	 */
+
+	values = (Atom*)prop->data;
+
+	for (i = 0; i < prop->size; i++)
+	{
+		if (!values[i])
+			continue;
+
+		if (values[i] == property || !ValidAtom(values[i]))
+			return BadValue;
+
+		if (XIGetDeviceProperty(local->dev, values[i], &val) != Success)
+			return BadValue;
+	}
+
+	if (!checkonly)
+	{
+		/* any action property needs to be registered for this handler. */
+		for (i = 0; i < prop->size; i++)
+			priv->btn_actions[i] = values[i];
+
+		for (i = 0; i < prop->size; i++)
+		{
+			if (!values[i])
+				continue;
+
+			XIGetDeviceProperty(local->dev, values[i], &val);
+
+			memset(priv->keys[i], 0, sizeof(priv->keys[i]));
+			for (j = 0; j < val->size; j++)
+				priv->keys[i][j] = ((unsigned int*)val->data)[j];
+		}
+
+	}
+	return Success;
+}
+
+int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 		BOOL checkonly)
 {
 	LocalDevicePtr local = (LocalDevicePtr) dev->public.devicePrivate;
@@ -353,8 +442,8 @@ int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 			priv->topY = area->topY = values[1];
 			priv->bottomX = area->bottomX = values[2];
 			priv->bottomY = area->bottomY = values[3];
-			xf86WcmInitialCoordinates(local, 0);
-			xf86WcmInitialCoordinates(local, 1);
+			wcmInitialCoordinates(local, 0);
+			wcmInitialCoordinates(local, 1);
 		}
 	} else if (property == prop_pressurecurve)
 	{
@@ -365,8 +454,8 @@ int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 		pcurve = (INT32*)prop->data;
 
-		if ((pcurve[0] > 100) || (pcurve[1] > 100) ||
-				(pcurve[2] > 100) || (pcurve[3] > 100))
+		if (!wcmCheckPressureCurveValues(pcurve[0], pcurve[1],
+						 pcurve[2], pcurve[3]))
 			return BadValue;
 
 		if (IsCursor(priv) || IsPad (priv) || IsTouch (priv))
@@ -485,7 +574,7 @@ int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 		if (!checkonly)
 		{
 			if (priv->screen_no != values[0])
-				xf86WcmChangeScreen(local, values[0]);
+				wcmChangeScreen(local, values[0]);
 			priv->screen_no = values[0];
 
 			if (priv->twinview != values[1])
@@ -501,7 +590,7 @@ int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 					DBG(10, priv, "TwinView sets to "
 							"TV_NONE: can't change screen_no. \n");
 				}
-				xf86WcmChangeScreen(local, screen);
+				wcmChangeScreen(local, screen);
 			}
 
 			priv->wcmMMonitor = values[2];
@@ -547,7 +636,7 @@ int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 		value = *(CARD32*)prop->data;
 
-		if ((value < 1) || (value > 21))
+		if ((value < 1) || (value > common->wcmMaxZ))
 			return BadValue;
 
 		if (!checkonly)
@@ -600,7 +689,7 @@ int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 			priv->tvResolution[3] = values[3];
 
 			/* reset screen info */
-			xf86WcmChangeScreen(local, priv->screen_no);
+			wcmChangeScreen(local, priv->screen_no);
 		}
 #ifdef DEBUG
 	} else if (property == prop_debuglevels)
@@ -621,111 +710,9 @@ int xf86WcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 		}
 #endif
 	} else if (property == prop_btnactions)
-	{
-		Atom *values;
-		int i, j;
-		XIPropertyValuePtr val;
-
-		if (prop->size != WCM_MAX_MOUSE_BUTTONS || prop->format != 32 ||
-				prop->type != XA_ATOM)
-			return BadMatch;
-
-		/* How this works:
-		 * prop_btnactions has a list of atoms stored. Any atom references
-		 * another property on that device that contains the actual action.
-		 * If this property changes, all action-properties are queried for
-		 * their value and their value is stored in priv->key[button].
-		 *
-		 * If the button is pressed, the actions are executed.
-		 *
-		 * Any button action property needs to be monitored by this property
-		 * handler too.
-		 */
-
-		values = (Atom*)prop->data;
-
-		for (i = 0; i < prop->size; i++)
-		{
-			if (!values[i])
-				continue;
-
-			if (values[i] == property || !ValidAtom(values[i]))
-				return BadValue;
-
-			if (XIGetDeviceProperty(local->dev, values[i], &val) != Success)
-				return BadValue;
-		}
-
-		if (!checkonly)
-		{
-			/* any action property needs to be registered for this handler. */
-			for (i = 0; i < prop->size; i++)
-				priv->btn_actions[i] = values[i];
-
-			for (i = 0; i < prop->size; i++)
-			{
-				if (!values[i])
-					continue;
-
-				XIGetDeviceProperty(local->dev, values[i], &val);
-
-				memset(priv->keys[i], 0, sizeof(priv->keys[i]));
-				for (j = 0; j < val->size; j++)
-					priv->keys[i][j] = ((unsigned int*)val->data)[j];
-			}
-
-		}
-	} else
-	{
-		int i, j;
-
-		/* check all properties used for button actions */
-		for (i = 0; i < ARRAY_SIZE(priv->btn_actions); i++)
-			if (priv->btn_actions[i] == property)
-				break;
-
-		if (i < ARRAY_SIZE(priv->btn_actions))
-		{
-			CARD32 *data;
-			int code;
-			int type;
-
-			if (prop->size >= 255 || prop->format != 32 ||
-					prop->type != XA_INTEGER)
-				return BadMatch;
-
-			data = (CARD32*)prop->data;
-
-			for (j = 0;j < prop->size; j++)
-			{
-				code = data[j] & AC_CODE;
-				type = data[j] & AC_TYPE;
-
-				switch(type)
-				{
-					case AC_KEY:
-						break;
-					case AC_BUTTON:
-						if (code > WCM_MAX_MOUSE_BUTTONS)
-							return BadValue;
-						break;
-					case AC_DISPLAYTOGGLE:
-					case AC_MODETOGGLE:
-					case AC_DBLCLICK:
-						break;
-					default:
-						return BadValue;
-				}
-
-				if (!checkonly)
-				{
-					memset(priv->keys[i], 0, sizeof(priv->keys[i]));
-					for (j = 0; j < prop->size; j++)
-						priv->keys[i][j] = data[j];
-				}
-			}
-		}
-	}
+		wcmSetPropertyButtonActions(dev, property, prop, checkonly);
+	else
+		wcmSetActionProperties(dev, property, prop, checkonly);
 
 	return Success;
 }
