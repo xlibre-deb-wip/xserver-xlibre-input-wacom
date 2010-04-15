@@ -1,3 +1,13 @@
+xf86-input-wacom (0.10.5+20100415-1) unstable; urgency=low
+
+  * Move 10-wacom.conf to 20-wacom.conf, as merged upstream.
+  * Add xutils-dev to B-D, for xorg-macros.pc
+    It doesn't seem to actually cause any problems to have that missing,
+    but it does bark in the build logs and we may be using things from it
+    in the not too distant future now.
+
+ -- Ron Lee <ron@debian.org>  Thu, 15 Apr 2010 17:31:12 +0930
+
 xf86-input-wacom (0.10.5+20100414-1) unstable; urgency=low
 
   * Replace the hardcoded rotation tables with a single call to atan2.
