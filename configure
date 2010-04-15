@@ -12139,7 +12139,7 @@ fi
 DRIVER_NAME=wacom
 
 
-ac_config_files="$ac_config_files Makefile fdi/Makefile src/Makefile man/Makefile include/Makefile tools/Makefile xorg-wacom.pc"
+ac_config_files="$ac_config_files Makefile conf/Makefile src/Makefile man/Makefile include/Makefile tools/Makefile xorg-wacom.pc"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -13118,7 +13118,7 @@ do
     "depfiles") CONFIG_COMMANDS="$CONFIG_COMMANDS depfiles" ;;
     "libtool") CONFIG_COMMANDS="$CONFIG_COMMANDS libtool" ;;
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
-    "fdi/Makefile") CONFIG_FILES="$CONFIG_FILES fdi/Makefile" ;;
+    "conf/Makefile") CONFIG_FILES="$CONFIG_FILES conf/Makefile" ;;
     "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
     "man/Makefile") CONFIG_FILES="$CONFIG_FILES man/Makefile" ;;
     "include/Makefile") CONFIG_FILES="$CONFIG_FILES include/Makefile" ;;

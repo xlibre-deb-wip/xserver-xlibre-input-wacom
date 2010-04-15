@@ -34,7 +34,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-subdir = fdi
+subdir = conf
 DIST_COMMON = $(dist_fdi_DATA) $(dist_xorgconf_DATA) \
 	$(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -216,7 +216,7 @@ top_srcdir = @top_srcdir@
 fdidir = $(datadir)/hal/fdi/policy/20thirdparty
 dist_fdi_DATA = wacom.fdi
 xorgconfdir = $(libdir)/X11/xorg.conf.d
-dist_xorgconf_DATA = 10-wacom.conf
+dist_xorgconf_DATA = 20-wacom.conf
 all: all-am
 
 .SUFFIXES:
@@ -229,9 +229,9 @@ $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__confi
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign fdi/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign conf/Makefile'; \
 	$(am__cd) $(top_srcdir) && \
-	  $(AUTOMAKE) --foreign fdi/Makefile
+	  $(AUTOMAKE) --foreign conf/Makefile
 .PRECIOUS: Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \
