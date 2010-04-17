@@ -1,3 +1,14 @@
+xf86-input-wacom (0.10.5+20100416-1) unstable; urgency=low
+
+  * Normalise pressure sensitivity.  This helps avoid a heavily used stylus
+    from inadvertantly generating a click when brought into proximity due
+    to its initial unloaded pressure value creeping up.
+  * Use pkg-config to decide where to install 20-wacom.conf.  Closes: #578113
+    Proper detection of this in the upstream install means we don't need to
+    manually remove the .fdi anymore either.
+
+ -- Ron Lee <ron@debian.org>  Sat, 17 Apr 2010 17:40:38 +0930
+
 xf86-input-wacom (0.10.5+20100415-1) unstable; urgency=low
 
   * Move 10-wacom.conf to 20-wacom.conf, as merged upstream.
