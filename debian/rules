@@ -55,7 +55,6 @@ install-arch:
 
 	cd $(objdir) && $(MAKE) install DESTDIR=$(CURDIR)/debian/$(package)
 	$(RM) debian/$(package)/usr/lib/xorg/modules/input/*.la
-	$(RM) -r debian/$(package)/usr/share/hal
 
 	dh_installudev --priority=69
 
