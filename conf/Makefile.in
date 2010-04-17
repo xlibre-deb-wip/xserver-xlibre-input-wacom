@@ -35,7 +35,7 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 subdir = conf
-DIST_COMMON = $(dist_fdi_DATA) $(dist_xorgconf_DATA) \
+DIST_COMMON = $(am__dist_fdi_DATA_DIST) $(am__dist_xorgconf_DATA_DIST) \
 	$(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -53,6 +53,7 @@ am__v_at_ = $(am__v_at_$(AM_DEFAULT_VERBOSITY))
 am__v_at_0 = @
 SOURCES =
 DIST_SOURCES =
+am__dist_fdi_DATA_DIST = wacom.fdi
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
     $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
@@ -75,6 +76,7 @@ am__base_list = \
   sed '$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;s/\n/ /g' | \
   sed '$$!N;$$!N;$$!N;$$!N;s/\n/ /g'
 am__installdirs = "$(DESTDIR)$(fdidir)" "$(DESTDIR)$(xorgconfdir)"
+am__dist_xorgconf_DATA_DIST = 20-wacom.conf
 DATA = $(dist_fdi_DATA) $(dist_xorgconf_DATA)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
@@ -158,6 +160,7 @@ VERSION = @VERSION@
 X11_CFLAGS = @X11_CFLAGS@
 X11_LIBS = @X11_LIBS@
 XORG_CFLAGS = @XORG_CFLAGS@
+XORG_CONF_DIR = @XORG_CONF_DIR@
 XORG_LIBS = @XORG_LIBS@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
@@ -213,10 +216,10 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-fdidir = $(datadir)/hal/fdi/policy/20thirdparty
-dist_fdi_DATA = wacom.fdi
-xorgconfdir = $(libdir)/X11/xorg.conf.d
-dist_xorgconf_DATA = 20-wacom.conf
+@HAS_XORG_CONF_DIR_TRUE@xorgconfdir = $(XORG_CONF_DIR)
+@HAS_XORG_CONF_DIR_TRUE@dist_xorgconf_DATA = 20-wacom.conf
+@HAS_XORG_CONF_DIR_FALSE@fdidir = $(datadir)/hal/fdi/policy/20thirdparty
+@HAS_XORG_CONF_DIR_FALSE@dist_fdi_DATA = wacom.fdi
 all: all-am
 
 .SUFFIXES:

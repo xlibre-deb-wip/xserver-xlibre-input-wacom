@@ -182,6 +182,7 @@ VERSION = @VERSION@
 X11_CFLAGS = @X11_CFLAGS@
 X11_LIBS = @X11_LIBS@
 XORG_CFLAGS = @XORG_CFLAGS@
+XORG_CONF_DIR = @XORG_CONF_DIR@
 XORG_LIBS = @XORG_LIBS@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@

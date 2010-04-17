@@ -233,6 +233,7 @@ VERSION = @VERSION@
 X11_CFLAGS = @X11_CFLAGS@
 X11_LIBS = @X11_LIBS@
 XORG_CFLAGS = @XORG_CFLAGS@
+XORG_CONF_DIR = @XORG_CONF_DIR@
 XORG_LIBS = @XORG_LIBS@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
@@ -290,7 +291,9 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 
 # Ensure headers are installed below $(prefix) for distcheck
-DISTCHECK_CONFIGURE_FLAGS = --with-sdkdir='$${includedir}/xorg'
+DISTCHECK_CONFIGURE_FLAGS = --with-sdkdir='$${includedir}/xorg' \
+			    --with-xorg-conf-dir='$${datadir}/X11/xorg.conf.d'
+
 SUBDIRS = conf src man include tools
 MAINTAINERCLEANFILES = ChangeLog INSTALL
 pkgconfigdir = $(libdir)/pkgconfig
