@@ -5,6 +5,7 @@ xf86-input-wacom (0.10.10+20110203-1) unstable; urgency=low
   * Fixes TwinView by purging it.  Closes: #571023, #571025
   * Build with the xorg 1.9 packages now about to come out of experimental.
     Closes: #607355
+  * Fix a bug in xsetwacom that displayed the usage() twice.  Closes: #612122
 
  -- Ron Lee <ron@debian.org>  Sun, 06 Feb 2011 11:58:40 +1030
 
