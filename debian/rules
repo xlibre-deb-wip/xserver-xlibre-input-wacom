@@ -44,7 +44,7 @@ build-indep:
 
 install: install-arch
 
-install-arch: XORG = /usr/share/xserver-xorg
+install-arch: XDEP = $(shell cat /usr/share/xserver-xorg/xinputdep)
 install-arch: XSUB = debian/$(package).substvars
 install-arch: DH_OPTIONS = -p$(package)
 install-arch: build-arch
@@ -58,8 +58,8 @@ install-arch:
 
 	dh_installudev --priority=69
 
-	echo "xserver:Depends=xserver-xorg-core (>= $(shell cat $(XORG)/serverminver))" > $(XSUB)
-	echo "xinpdriver:Provides=xserver-xorg-input-$(shell cat $(XORG)/inputabiver)" >> $(XSUB)
+	echo "xinpdriver:Depends=$(XDEP)" > $(XSUB)
+	echo "xinpdriver:Provides=xorg-driver-input" >> $(XSUB)
 
 install-indep:
 
