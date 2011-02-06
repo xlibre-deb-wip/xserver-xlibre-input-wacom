@@ -54,7 +54,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-bin_PROGRAMS = xsetwacom$(EXEEXT)
+bin_PROGRAMS = xsetwacom$(EXEEXT) isdv4-serial-debugger$(EXEEXT)
 subdir = tools
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -67,15 +67,15 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-xsetwacom_SOURCES = xsetwacom.c
-xsetwacom_OBJECTS = xsetwacom.$(OBJEXT)
-xsetwacom_LDADD = $(LDADD)
+isdv4_serial_debugger_SOURCES = isdv4-serial-debugger.c
+isdv4_serial_debugger_OBJECTS = isdv4-serial-debugger.$(OBJEXT)
+isdv4_serial_debugger_LDADD = $(LDADD)
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
 am__v_lt_0 = --silent
-xsetwacom_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
-	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
-	$(xsetwacom_LDFLAGS) $(LDFLAGS) -o $@
+xsetwacom_SOURCES = xsetwacom.c
+xsetwacom_OBJECTS = xsetwacom.$(OBJEXT)
+xsetwacom_LDADD = $(LDADD)
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
@@ -102,8 +102,8 @@ am__v_CCLD_0 = @echo "  CCLD  " $@;
 AM_V_GEN = $(am__v_GEN_$(V))
 am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
 am__v_GEN_0 = @echo "  GEN   " $@;
-SOURCES = xsetwacom.c
-DIST_SOURCES = xsetwacom.c
+SOURCES = isdv4-serial-debugger.c xsetwacom.c
+DIST_SOURCES = isdv4-serial-debugger.c xsetwacom.c
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -161,6 +161,7 @@ LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
+MAN_SUBSTS = @MAN_SUBSTS@
 MISC_MAN_DIR = @MISC_MAN_DIR@
 MISC_MAN_SUFFIX = @MISC_MAN_SUFFIX@
 MKDIR_P = @MKDIR_P@
@@ -179,6 +180,8 @@ PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
@@ -188,8 +191,8 @@ VERSION = @VERSION@
 X11_CFLAGS = @X11_CFLAGS@
 X11_LIBS = @X11_LIBS@
 XORG_CFLAGS = @XORG_CFLAGS@
-XORG_CONF_DIR = @XORG_CONF_DIR@
 XORG_LIBS = @XORG_LIBS@
+XORG_MAN_PAGE = @XORG_MAN_PAGE@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -208,6 +211,7 @@ build_cpu = @build_cpu@
 build_os = @build_os@
 build_vendor = @build_vendor@
 builddir = @builddir@
+configdir = @configdir@
 datadir = @datadir@
 datarootdir = @datarootdir@
 docdir = @docdir@
@@ -244,9 +248,9 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-AM_CPPFLAGS = -I$(top_srcdir)/include/
+AM_CPPFLAGS = -I$(top_srcdir)/include
 AM_CFLAGS = $(XORG_CFLAGS) $(X11_CFLAGS)
-xsetwacom_LDFLAGS = $(X11_LIBS) -lm
+AM_LDFLAGS = $(X11_LIBS)
 all: all-am
 
 .SUFFIXES:
@@ -324,9 +328,12 @@ clean-binPROGRAMS:
 	list=`for p in $$list; do echo "$$p"; done | sed 's/$(EXEEXT)$$//'`; \
 	echo " rm -f" $$list; \
 	rm -f $$list
+isdv4-serial-debugger$(EXEEXT): $(isdv4_serial_debugger_OBJECTS) $(isdv4_serial_debugger_DEPENDENCIES) 
+	@rm -f isdv4-serial-debugger$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(isdv4_serial_debugger_OBJECTS) $(isdv4_serial_debugger_LDADD) $(LIBS)
 xsetwacom$(EXEEXT): $(xsetwacom_OBJECTS) $(xsetwacom_DEPENDENCIES) 
 	@rm -f xsetwacom$(EXEEXT)
-	$(AM_V_CCLD)$(xsetwacom_LINK) $(xsetwacom_OBJECTS) $(xsetwacom_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(LINK) $(xsetwacom_OBJECTS) $(xsetwacom_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -334,6 +341,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isdv4-serial-debugger.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xsetwacom.Po@am__quote@
 
 .c.o:

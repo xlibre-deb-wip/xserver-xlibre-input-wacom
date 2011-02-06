@@ -51,11 +51,6 @@ the tablet is plugged.  You have to specify it for each subsection with
 the same value if you want to have multiple devices with the same tablet.
 This option is mandatory.
 .TP 4
-.B Option \fI"ForceDevice"\fP \fI"ISDV4"\fP
-tells the driver to dialog with the tablet the serial Tablet PC way.  It 
-is a special Wacom IV protocol, called ISDV4 protocol.  This option is 
-mandatory for serial Tablet PCs only.
-.TP 4
 .B Option \fI"Suppress"\fP \fI"number"\fP
 sets the position increment under which not to transmit coordinates.
 This entry must be specified only in the first Wacom subsection if you have
@@ -123,9 +118,12 @@ To ignore the button click, i.e., to not report any button click event
 to the X server,  use "0" or "button 0".
 .TP 4
 .B Option \fI"TPCButton"\fP \fI"on"|"off"\fP
-enables the stylus buttons as  Tablet PC buttons,  i.e., reports stylus 
-button event only when its tip is pressed.  Default to "on" for Tablet PCs; 
-"off" for all other models.
+enables the stylus buttons as Tablet PC buttons. If enabled, the stylus
+reports button events only when its tip is pressed. If any button is down,
+pressing the tip reports a button event for the button. Otherwise if no
+button is down, the tip reports as usual.
+Default to "on" for Tablet PCs; "off" for all other models. Only available
+on the stylus tool.
 .TP 4
 .B Option \fI"Touch"\fP \fI"on"|"off"\fP
 enables the touch event for Tablet PC that supports touch feature,  i.e., 
@@ -143,31 +141,6 @@ A Rspeed greater than 1.0 will speed up the cursor's relative movement.  A Rspee
 less than 1.0 but greater than 0 will slow down the cursor's relative movement. 
 A Rspeed too close to 0 is not recommanded.
 .TP 4
-.B Option \fI"Twinview"\fP \fI"horizontal"|"vertical"|"leftof"|"aboveof"|"xinerama"|"none"\fP
-sets the orientation of TwinView to map the tablet to one screen and to be able 
-to move the screen cursor from one screen to the other when tool reaches the 
-edge of the tablet.  The cursor can be constrained in a specific screen if 
-"ScreenNo" option is added.  If you  want to map the tablet to the whole desktop,   
-you should NOT add this option.  The default is "none". Note: due to historic 
-reason, "horizontal"  represents the  "RightOf" and "vertical" represents the 
-"BelowOf" in acutal TwinView setup.
-.TP 4
-.B Option \fI"TVResolution"\fP \fI"res0,res1"\fP
-specifies different resolutions for the two screens in TwinView setup.  For example, 
-if the resolution of screen 0 (res0) is 1024x768 and screen 1 (res1) is 1280x1024, 
-the option will be set to:
-            Option "TVResolution" "1024x768,1280x1024" 
-
-This option is used only when TwinView option is not none.  It is unnecessary to add 
-this option if your screens are displaying in the same resolutions.
-.TP 4
-.B Option \fI"ScreenNo"\fP \fI"n"\fP
-In a multi-monitor environment, specifies the screen number in which the cursor can move.
-.TP 4
-.B Option \fI"MMonitor"\fP \fI"n"\fP
-turns on/off across monitor movement on a non-TwinView multi-monitor desktop. 
-The default is "on". Here n starts from  0, which indicates the first screen.
-.TP 4
 .B Option \fI"Rotate"\fP \fI"CW"|"CCW"|"HALF"|"NONE"\fP
 rotates the tablet orientation counterclockwise (CCW) or clockwise (CW) or 180 degrees (HALF). 
 If you have specific tablet mappings, i.e. TopX/Y or BottomX/Y were set, the mapping will be 
@@ -175,12 +148,16 @@ applied before rotation. The default is "NONE".
 .TP 4
 .B Option \fI"PressCurve"\fP \fI"x1,y1,x2,y2"\fP
 sets pressure curve by control points x1, y1, x2, and y2.  Their values are in range 
-from 0..100. The input for 
-	linear curve (default) is "0,0,100,100"; 
-	slightly depressed curve (firmer) might be "5,0,100,95"; 
-	slightly raised curve (softer) might be "0,5,95,100".
+from 0..100. The pressure curve is interpreted as Bezier curve with 4
+control points, the first and the last control point being fixed on the
+coordinates 0/0 and 100/100, respectively. The middle control points are
+adjustible by this setting and thus define the shape of the curve.
+The input for linear curve (default) is "0,0,100,100"; 
+slightly depressed curve (firmer) might be "5,0,100,95"; 
+slightly raised curve (softer) might be "0,5,95,100".
 The pressure curve is only applicable to devices of type stylus or eraser,
 other devices do not honor this setting.
+
 .TP 4
 .B Option \fI"KeepShape"\fP \fI"on"|"off"\fP
 When this option is enabled, the active zone  begins according to TopX
@@ -189,21 +166,23 @@ of the active zone the same as the screen while maximizing the area
 described by TopX, TopY, BottomX, BottomY.
 .TP 4
 .B Option \fI"DebugLevel"\fP \fI"number"\fP
-sets the level of debugging info reported.  There are 12 levels, specified by 
-the integers between 1 and 12.  Once it is defined, all the debug messages 
-with a level less than or equal to the "number" will be logged into 
-/etc/X11/Xorg.0.log.
+sets the level of debugging info for tool-specific messages.  There are 12
+levels, specified by the integers between 1 and 12.  All debug messages with
+a level less than or equal to the "number" will be logged into the Xorg log
+file. This option is only available if the driver was built with debugging
+support.
 .TP 4
 .B Option \fI"CommonDBG"\fP \fI"number"\fP
-sets the level of debugging info for all devices defined for the  
-same tablet. There are 12 levels in use, specified by the 
-integers between 1 and 12. Once it is defined, all the debug 
-messages with a level less than or equal to the "number" will 
-be logged into /etc/X11/Xorg.0.log.
+sets the level of debugging info for common (i.e. not tool-specific) code
+paths on the tablet. There are 12 levels, specified by the integers between
+1 and 12. All debug messages with a level less than or equal to the
+"number" will be logged into the Xorg log file. This option is only
+available if the driver was built with debugging support.
 .TP 4
 .B Option \fI"CursorProx"\fP \fI"number"\fP
 sets the max distance from tablet to stop reporting movement for cursor in relative mode. 
-Default for Intuos series is 10, for Graphire series (including Volitos) is 42.
+Default for Intuos series is 10, for Graphire series (including Volitos) is
+42. Only available for the cursor/puck device.
 .TP 4
 .B Option \fI"Serial"\fP \fI"number"\fP
 sets the serial number associated with the physical device. This allows
@@ -214,7 +193,7 @@ xsetwacom, which comes with linuxwacom package.
 .TP 4
 .B Option \fI"Threshold"\fP \fI"number"\fP
 sets the pressure threshold used to generate a button 1 events of stylus.
-The default is MaxPressure*3/50.
+The default is 27.
 .RE
 .SH "SEE ALSO"
 Xorg(1x), xorg.conf(5x), xorgconfig(1x), Xserver(1x), X(7).
@@ -222,4 +201,5 @@ Xorg(1x), xorg.conf(5x), xorgconfig(1x), Xserver(1x), X(7).
 Frederic Lepied <lepied@xfree86.org>,
 Ping Cheng <pingc@wacom.com>,
 John E. Joganic <jej@j-arkadia.com>,
-Magnus Vigerlöf <Magnus.Vigerlof@ipbo.se>
+Magnus Vigerlöf <Magnus.Vigerlof@ipbo.se>,
+Peter Hutterer <peter.hutterer@who-t.net>

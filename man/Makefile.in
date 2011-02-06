@@ -98,8 +98,9 @@ am__nobase_list = $(am__nobase_strip_setup); \
 am__base_list = \
   sed '$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;s/\n/ /g' | \
   sed '$$!N;$$!N;$$!N;$$!N;s/\n/ /g'
-am__installdirs = "$(DESTDIR)$(drivermandir)"
-DATA = $(driverman_DATA)
+am__installdirs = "$(DESTDIR)$(drivermandir)" \
+	"$(DESTDIR)$(xsetwacommandir)"
+DATA = $(driverman_DATA) $(xsetwacomman_DATA)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
 ADMIN_MAN_DIR = @ADMIN_MAN_DIR@
@@ -155,6 +156,7 @@ LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
+MAN_SUBSTS = @MAN_SUBSTS@
 MISC_MAN_DIR = @MISC_MAN_DIR@
 MISC_MAN_SUFFIX = @MISC_MAN_SUFFIX@
 MKDIR_P = @MKDIR_P@
@@ -173,6 +175,8 @@ PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
@@ -182,8 +186,8 @@ VERSION = @VERSION@
 X11_CFLAGS = @X11_CFLAGS@
 X11_LIBS = @X11_LIBS@
 XORG_CFLAGS = @XORG_CFLAGS@
-XORG_CONF_DIR = @XORG_CONF_DIR@
 XORG_LIBS = @XORG_LIBS@
+XORG_MAN_PAGE = @XORG_MAN_PAGE@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -202,6 +206,7 @@ build_cpu = @build_cpu@
 build_os = @build_os@
 build_vendor = @build_vendor@
 builddir = @builddir@
+configdir = @configdir@
 datadir = @datadir@
 datarootdir = @datarootdir@
 docdir = @docdir@
@@ -241,29 +246,16 @@ top_srcdir = @top_srcdir@
 drivermandir = $(DRIVER_MAN_DIR)
 driverman_PRE = @DRIVER_NAME@.man
 driverman_DATA = $(driverman_PRE:man=@DRIVER_MAN_SUFFIX@)
-EXTRA_DIST = @DRIVER_NAME@.man
-CLEANFILES = $(driverman_DATA)
-
-# Strings to replace in man pages
-XORGRELSTRING = @PACKAGE_STRING@
-XORGMANNAME = X Version 11
-MAN_SUBSTS = \
-	-e 's|__vendorversion__|"$(XORGRELSTRING)" "$(XORGMANNAME)"|' \
-	-e 's|__xorgversion__|"$(XORGRELSTRING)" "$(XORGMANNAME)"|' \
-	-e 's|__xservername__|Xorg|g' \
-	-e 's|__xconfigfile__|xorg.conf|g' \
-	-e 's|__projectroot__|$(prefix)|g' \
-	-e 's|__appmansuffix__|$(APP_MAN_SUFFIX)|g' \
-	-e 's|__drivermansuffix__|$(DRIVER_MAN_SUFFIX)|g' \
-	-e 's|__adminmansuffix__|$(ADMIN_MAN_SUFFIX)|g' \
-	-e 's|__miscmansuffix__|$(MISC_MAN_SUFFIX)|g' \
-	-e 's|__filemansuffix__|$(FILE_MAN_SUFFIX)|g'
-
-SUFFIXES = .$(DRIVER_MAN_SUFFIX) .man
+xsetwacommandir = $(APP_MAN_DIR)
+xsetwacomman_PRE = xsetwacom.man
+xsetwacomman_DATA = $(xsetwacomman_PRE:man=@APP_MAN_SUFFIX@)
+EXTRA_DIST = @DRIVER_NAME@.man xsetwacom.man
+CLEANFILES = $(driverman_DATA) $(xsetwacomman_DATA)
+SUFFIXES = .$(DRIVER_MAN_SUFFIX) $(APP_MAN_SUFFIX) .man
 all: all-am
 
 .SUFFIXES:
-.SUFFIXES: .$(DRIVER_MAN_SUFFIX) .man
+.SUFFIXES: .$(DRIVER_MAN_SUFFIX) @APP_MAN_SUFFIX@ .man .$(APP_MAN_SUFFIX)
 $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
@@ -320,6 +312,26 @@ uninstall-drivermanDATA:
 	test -n "$$files" || exit 0; \
 	echo " ( cd '$(DESTDIR)$(drivermandir)' && rm -f" $$files ")"; \
 	cd "$(DESTDIR)$(drivermandir)" && rm -f $$files
+install-xsetwacommanDATA: $(xsetwacomman_DATA)
+	@$(NORMAL_INSTALL)
+	test -z "$(xsetwacommandir)" || $(MKDIR_P) "$(DESTDIR)$(xsetwacommandir)"
+	@list='$(xsetwacomman_DATA)'; test -n "$(xsetwacommandir)" || list=; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(xsetwacommandir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(xsetwacommandir)" || exit $$?; \
+	done
+
+uninstall-xsetwacommanDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(xsetwacomman_DATA)'; test -n "$(xsetwacommandir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	test -n "$$files" || exit 0; \
+	echo " ( cd '$(DESTDIR)$(xsetwacommandir)' && rm -f" $$files ")"; \
+	cd "$(DESTDIR)$(xsetwacommandir)" && rm -f $$files
 tags: TAGS
 TAGS:
 
@@ -361,7 +373,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(DATA)
 installdirs:
-	for dir in "$(DESTDIR)$(drivermandir)"; do \
+	for dir in "$(DESTDIR)$(drivermandir)" "$(DESTDIR)$(xsetwacommandir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -410,7 +422,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-drivermanDATA
+install-data-am: install-drivermanDATA install-xsetwacommanDATA
 
 install-dvi: install-dvi-am
 
@@ -454,7 +466,7 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-drivermanDATA
+uninstall-am: uninstall-drivermanDATA uninstall-xsetwacommanDATA
 
 .MAKE: install-am install-strip
 
@@ -465,13 +477,17 @@ uninstall-am: uninstall-drivermanDATA
 	install-dvi-am install-exec install-exec-am install-html \
 	install-html-am install-info install-info-am install-man \
 	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
-	uninstall uninstall-am uninstall-drivermanDATA
+	install-strip install-xsetwacommanDATA installcheck \
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic \
+	mostlyclean-libtool pdf pdf-am ps ps-am uninstall uninstall-am \
+	uninstall-drivermanDATA uninstall-xsetwacommanDATA
 
 
+# String replacements in MAN_SUBSTS now come from xorg-macros.m4 via configure
 .man.$(DRIVER_MAN_SUFFIX):
+	$(AM_V_GEN)$(SED) $(MAN_SUBSTS) < $< > $@
+.man.$(APP_MAN_SUFFIX):
 	$(AM_V_GEN)$(SED) $(MAN_SUBSTS) < $< > $@
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.

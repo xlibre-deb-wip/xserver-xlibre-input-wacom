@@ -35,7 +35,6 @@ static void filterCurveToLine(int* pCurve, int nMax, double x0, double y0,
 static int filterOnLine(double x0, double y0, double x1, double y1,
 		double a, double b);
 static void filterLine(int* pCurve, int nMax, int x0, int y0, int x1, int y1);
-static void filterIntuosStylus(WacomCommonPtr common, WacomFilterStatePtr state, WacomDeviceStatePtr ds);
 void wcmTilt2R(WacomDeviceStatePtr ds);
 
 
@@ -62,19 +61,6 @@ void wcmSetPressureCurve(WacomDevicePtr pDev, int x0, int y0,
 	if (!wcmCheckPressureCurveValues(x0, y0, x1, y1))
 		return;
 
-	/* if curve is not allocated, do it now. */
-	if (!pDev->pPressCurve)
-	{
-		pDev->pPressCurve = (int*) xalloc(sizeof(int) *
-			(FILTER_PRESSURE_RES + 1));
-		if (!pDev->pPressCurve)
-		{
-			xf86Msg(X_ERROR, "%s: wcmSetPressureCurve: failed to "
-				"allocate memory for curve\n", pDev->local->name);
-			return;
-		}
-	}
-
 	/* linear by default */
 	for (i=0; i<=FILTER_PRESSURE_RES; ++i)
 		pDev->pPressCurve[i] = i;
@@ -92,6 +78,19 @@ void wcmSetPressureCurve(WacomDevicePtr pDev, int x0, int y0,
 	pDev->nPressCtrl[2] = x1;
 	pDev->nPressCtrl[3] = y1;
 }
+
+/*
+ * wcmResetSampleCounter --
+ * Device specific filter routines are responcable for storing raw data
+ * as well as filtering.  wcmResetSampleCounter is called to reset
+ * raw counters.
+ */
+void wcmResetSampleCounter(const WacomChannelPtr pChannel)
+{
+	pChannel->nSamples = 0;
+	pChannel->rawFilter.npoints = 0;
+}
+
 
 static void filterNearestPoint(double x0, double y0, double x1, double y1,
 		double a, double b, double* x, double* y)
@@ -215,38 +214,55 @@ static void filterLine(int* pCurve, int nMax, int x0, int y0, int x1, int y1)
 		}
 	}
 }
-
-/*****************************************************************************
- * filterIntuosStylus --
- *   Correct some hardware defects we've been seeing in Intuos pads,
- *   but also cuts down quite a bit on jitter.
- ****************************************************************************/
-
-static void filterIntuosStylus(WacomCommonPtr common, WacomFilterStatePtr state, WacomDeviceStatePtr ds)
+static void storeRawSample(WacomCommonPtr common, WacomChannelPtr pChannel,
+			   WacomDeviceStatePtr ds)
 {
-	int x=0, y=0, tx=0, ty=0, i;
+	WacomFilterState *fs;
+	int i;
 
-	for ( i=0; i<common->wcmRawSample; i++ )
+	fs = &pChannel->rawFilter;
+	if (!fs->npoints)
 	{
-		x += state->x[i];
-		y += state->y[i];
-		tx += state->tiltx[i];
-		ty += state->tilty[i];
+		DBG(10, common, "initialize channel data.\n");
+		/* Store initial value over whole average window */
+		for (i=common->wcmRawSample - 1; i>=0; i--)
+		{
+			fs->x[i]= ds->x;
+			fs->y[i]= ds->y;
+		}
+		if (HANDLE_TILT(common) && (ds->device_type == STYLUS_ID ||
+					    ds->device_type == ERASER_ID))
+		{
+			for (i=common->wcmRawSample - 1; i>=0; i--)
+			{
+				fs->tiltx[i] = ds->tiltx;
+				fs->tilty[i] = ds->tilty;
+			}
+		}
+		++fs->npoints;
+	} else {
+		/* Shift window and insert latest sample */
+		for (i=common->wcmRawSample - 1; i>0; i--)
+		{
+			fs->x[i]= fs->x[i-1];
+			fs->y[i]= fs->y[i-1];
+		}
+		fs->x[0] = ds->x;
+		fs->y[0] = ds->y;
+		if (HANDLE_TILT(common) && (ds->device_type == STYLUS_ID ||
+					    ds->device_type == ERASER_ID))
+		{
+			for (i=common->wcmRawSample - 1; i>0; i--)
+			{
+				fs->tiltx[i]= fs->tiltx[i-1];
+				fs->tilty[i]= fs->tilty[i-1];
+			}
+			fs->tiltx[0] = ds->tiltx;
+			fs->tilty[0] = ds->tilty;
+		}
+		if (fs->npoints < common->wcmRawSample)
+			++fs->npoints;
 	}
-	ds->x = x / common->wcmRawSample;
-	ds->y = y / common->wcmRawSample;
-
-	ds->tiltx = tx / common->wcmRawSample;
-	if (ds->tiltx > common->wcmMaxtiltX/2-1)
-   		ds->tiltx = common->wcmMaxtiltX/2-1;	
-	else if (ds->tiltx < -common->wcmMaxtiltX/2)
-		ds->tiltx = -common->wcmMaxtiltX/2;
-
-	ds->tilty = ty / common->wcmRawSample;
-	if (ds->tilty > common->wcmMaxtiltY/2-1)
-   		ds->tilty = common->wcmMaxtiltY/2-1;	
-	else if (ds->tilty < -common->wcmMaxtiltY/2)
-		ds->tilty = -common->wcmMaxtiltY/2;
 }
 
 /*****************************************************************************
@@ -256,45 +272,44 @@ static void filterIntuosStylus(WacomCommonPtr common, WacomFilterStatePtr state,
 int wcmFilterCoord(WacomCommonPtr common, WacomChannelPtr pChannel,
 	WacomDeviceStatePtr ds)
 {
-	/* Only noise correction should happen here. If there's a problem that
-	 * cannot be fixed, return 1 such that the data is discarded. */
-
-	WacomDeviceState *pLast;
-	int *x, *y, i; 
+	int x=0, y=0, tx=0, ty=0, i;
+	WacomFilterState *state;
 
 	DBG(10, common, "common->wcmRawSample = %d \n", common->wcmRawSample);
-	x = pChannel->rawFilter.x;
-	y = pChannel->rawFilter.y;
 
-	pLast = &pChannel->valid.state;
-	ds->x = 0;
-	ds->y = 0;
+	storeRawSample(common, pChannel, ds);
+
+	state = &pChannel->rawFilter;
 
 	for ( i=0; i<common->wcmRawSample; i++ )
 	{
-		ds->x += x[i];
-		ds->y += y[i];
+		x += state->x[i];
+		y += state->y[i];
+		if (HANDLE_TILT(common) && (ds->device_type == STYLUS_ID ||
+					    ds->device_type == ERASER_ID))
+		{
+			tx += state->tiltx[i];
+			ty += state->tilty[i];
+		}
 	}
-	ds->x /= common->wcmRawSample;
-	ds->y /= common->wcmRawSample;
+	ds->x = x / common->wcmRawSample;
+	ds->y = y / common->wcmRawSample;
 
-	return 0; /* lookin' good */
-}
+	if (HANDLE_TILT(common) && (ds->device_type == STYLUS_ID ||
+				    ds->device_type == ERASER_ID))
+	{
+		ds->tiltx = tx / common->wcmRawSample;
+		if (ds->tiltx > common->wcmMaxtiltX/2-1)
+			ds->tiltx = common->wcmMaxtiltX/2-1;
+		else if (ds->tiltx < -common->wcmMaxtiltX/2)
+			ds->tiltx = -common->wcmMaxtiltX/2;
 
-/*****************************************************************************
- * wcmFilterIntuos -- provide error correction to Intuos and Intuos2
- ****************************************************************************/
-
-int wcmFilterIntuos(WacomCommonPtr common, WacomChannelPtr pChannel,
-	WacomDeviceStatePtr ds)
-{
-	/* Only error correction should happen here. If there's a problem that
-	 * cannot be fixed, return 1 such that the data is discarded. */
-
-	if (ds->device_type != CURSOR_ID)
-		filterIntuosStylus(common, &pChannel->rawFilter, ds);
-	else
-		wcmFilterCoord(common, pChannel, ds);
+		ds->tilty = ty / common->wcmRawSample;
+		if (ds->tilty > common->wcmMaxtiltY/2-1)
+			ds->tilty = common->wcmMaxtiltY/2-1;
+		else if (ds->tilty < -common->wcmMaxtiltY/2)
+			ds->tilty = -common->wcmMaxtiltY/2;
+	}
 
 	return 0; /* lookin' good */
 }
@@ -325,4 +340,4 @@ void wcmTilt2R(WacomDeviceStatePtr ds)
 		ds->rotation = -ds->rotation;
 }
 
-/* vim: set noexpandtab shiftwidth=8: */
+/* vim: set noexpandtab tabstop=8 shiftwidth=8: */
