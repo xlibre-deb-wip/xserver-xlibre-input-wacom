@@ -1,3 +1,11 @@
+xf86-input-wacom (0.10.10+20110203-1) unstable; urgency=low
+
+  * Fix udev rules for serial tablets.  Closes: #589847, #609931
+  * Fixes relative mode sensitivity.  Closes: #611502
+  * Fixes TwinView by purging it.  Closes: #571023, #571025
+
+ -- Ron Lee <ron@debian.org>  Sun, 06 Feb 2011 11:58:40 +1030
+
 xf86-input-wacom (0.10.5+20100416-1) unstable; urgency=low
 
   * Normalise pressure sensitivity.  This helps avoid a heavily used stylus
