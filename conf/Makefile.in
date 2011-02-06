@@ -35,7 +35,7 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 subdir = conf
-DIST_COMMON = $(dist_fdi_DATA) $(dist_xorgconf_DATA) \
+DIST_COMMON = $(am__dist_config_DATA_DIST) $(am__dist_fdi_DATA_DIST) \
 	$(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -53,6 +53,7 @@ am__v_at_ = $(am__v_at_$(AM_DEFAULT_VERBOSITY))
 am__v_at_0 = @
 SOURCES =
 DIST_SOURCES =
+am__dist_config_DATA_DIST = 50-wacom.conf
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
     $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
@@ -74,8 +75,9 @@ am__nobase_list = $(am__nobase_strip_setup); \
 am__base_list = \
   sed '$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;$$!N;s/\n/ /g' | \
   sed '$$!N;$$!N;$$!N;$$!N;s/\n/ /g'
-am__installdirs = "$(DESTDIR)$(fdidir)" "$(DESTDIR)$(xorgconfdir)"
-DATA = $(dist_fdi_DATA) $(dist_xorgconf_DATA)
+am__installdirs = "$(DESTDIR)$(configdir)" "$(DESTDIR)$(fdidir)"
+am__dist_fdi_DATA_DIST = wacom.fdi
+DATA = $(dist_config_DATA) $(dist_fdi_DATA)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
 ADMIN_MAN_DIR = @ADMIN_MAN_DIR@
@@ -131,6 +133,7 @@ LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
+MAN_SUBSTS = @MAN_SUBSTS@
 MISC_MAN_DIR = @MISC_MAN_DIR@
 MISC_MAN_SUFFIX = @MISC_MAN_SUFFIX@
 MKDIR_P = @MKDIR_P@
@@ -149,6 +152,8 @@ PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PKG_CONFIG = @PKG_CONFIG@
+PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
+PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
@@ -159,6 +164,7 @@ X11_CFLAGS = @X11_CFLAGS@
 X11_LIBS = @X11_LIBS@
 XORG_CFLAGS = @XORG_CFLAGS@
 XORG_LIBS = @XORG_LIBS@
+XORG_MAN_PAGE = @XORG_MAN_PAGE@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -177,6 +183,7 @@ build_cpu = @build_cpu@
 build_os = @build_os@
 build_vendor = @build_vendor@
 builddir = @builddir@
+configdir = @configdir@
 datadir = @datadir@
 datarootdir = @datarootdir@
 docdir = @docdir@
@@ -213,10 +220,9 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-fdidir = $(datadir)/hal/fdi/policy/20thirdparty
-dist_fdi_DATA = wacom.fdi
-xorgconfdir = $(libdir)/X11/xorg.conf.d
-dist_xorgconf_DATA = 20-wacom.conf
+@HAS_XORG_CONF_DIR_TRUE@dist_config_DATA = 50-wacom.conf
+@HAS_XORG_CONF_DIR_FALSE@fdidir = $(datadir)/hal/fdi/policy/20thirdparty
+@HAS_XORG_CONF_DIR_FALSE@dist_fdi_DATA = wacom.fdi
 all: all-am
 
 .SUFFIXES:
@@ -256,6 +262,26 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
+install-dist_configDATA: $(dist_config_DATA)
+	@$(NORMAL_INSTALL)
+	test -z "$(configdir)" || $(MKDIR_P) "$(DESTDIR)$(configdir)"
+	@list='$(dist_config_DATA)'; test -n "$(configdir)" || list=; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(configdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(configdir)" || exit $$?; \
+	done
+
+uninstall-dist_configDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_config_DATA)'; test -n "$(configdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	test -n "$$files" || exit 0; \
+	echo " ( cd '$(DESTDIR)$(configdir)' && rm -f" $$files ")"; \
+	cd "$(DESTDIR)$(configdir)" && rm -f $$files
 install-dist_fdiDATA: $(dist_fdi_DATA)
 	@$(NORMAL_INSTALL)
 	test -z "$(fdidir)" || $(MKDIR_P) "$(DESTDIR)$(fdidir)"
@@ -276,26 +302,6 @@ uninstall-dist_fdiDATA:
 	test -n "$$files" || exit 0; \
 	echo " ( cd '$(DESTDIR)$(fdidir)' && rm -f" $$files ")"; \
 	cd "$(DESTDIR)$(fdidir)" && rm -f $$files
-install-dist_xorgconfDATA: $(dist_xorgconf_DATA)
-	@$(NORMAL_INSTALL)
-	test -z "$(xorgconfdir)" || $(MKDIR_P) "$(DESTDIR)$(xorgconfdir)"
-	@list='$(dist_xorgconf_DATA)'; test -n "$(xorgconfdir)" || list=; \
-	for p in $$list; do \
-	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
-	  echo "$$d$$p"; \
-	done | $(am__base_list) | \
-	while read files; do \
-	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(xorgconfdir)'"; \
-	  $(INSTALL_DATA) $$files "$(DESTDIR)$(xorgconfdir)" || exit $$?; \
-	done
-
-uninstall-dist_xorgconfDATA:
-	@$(NORMAL_UNINSTALL)
-	@list='$(dist_xorgconf_DATA)'; test -n "$(xorgconfdir)" || list=; \
-	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
-	test -n "$$files" || exit 0; \
-	echo " ( cd '$(DESTDIR)$(xorgconfdir)' && rm -f" $$files ")"; \
-	cd "$(DESTDIR)$(xorgconfdir)" && rm -f $$files
 tags: TAGS
 TAGS:
 
@@ -337,7 +343,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(DATA)
 installdirs:
-	for dir in "$(DESTDIR)$(fdidir)" "$(DESTDIR)$(xorgconfdir)"; do \
+	for dir in "$(DESTDIR)$(configdir)" "$(DESTDIR)$(fdidir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -385,7 +391,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-dist_fdiDATA install-dist_xorgconfDATA
+install-data-am: install-dist_configDATA install-dist_fdiDATA
 
 install-dvi: install-dvi-am
 
@@ -429,22 +435,22 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-dist_fdiDATA uninstall-dist_xorgconfDATA
+uninstall-am: uninstall-dist_configDATA uninstall-dist_fdiDATA
 
 .MAKE: install-am install-strip
 
 .PHONY: all all-am check check-am clean clean-generic clean-libtool \
 	distclean distclean-generic distclean-libtool distdir dvi \
 	dvi-am html html-am info info-am install install-am \
-	install-data install-data-am install-dist_fdiDATA \
-	install-dist_xorgconfDATA install-dvi install-dvi-am \
-	install-exec install-exec-am install-html install-html-am \
-	install-info install-info-am install-man install-pdf \
-	install-pdf-am install-ps install-ps-am install-strip \
-	installcheck installcheck-am installdirs maintainer-clean \
+	install-data install-data-am install-dist_configDATA \
+	install-dist_fdiDATA install-dvi install-dvi-am install-exec \
+	install-exec-am install-html install-html-am install-info \
+	install-info-am install-man install-pdf install-pdf-am \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-generic \
 	mostlyclean-libtool pdf pdf-am ps ps-am uninstall uninstall-am \
-	uninstall-dist_fdiDATA uninstall-dist_xorgconfDATA
+	uninstall-dist_configDATA uninstall-dist_fdiDATA
 
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
