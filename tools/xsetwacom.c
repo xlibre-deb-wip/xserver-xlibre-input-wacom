@@ -1,5 +1,5 @@
 /*
- * Copyright 2009 Red Hat, Inc.
+ * Copyright 2009 - 2010 Red Hat, Inc.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -34,9 +34,13 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/XInput.h>
+#include <X11/extensions/Xrandr.h>
+#include <X11/XKBlib.h>
 
 #define TRACE(...) \
 	if (verbose) fprintf(stderr, "... " __VA_ARGS__)
+
+#define ArrayLength(a) ((unsigned int)(sizeof(a) / (sizeof((a)[0]))))
 
 static int verbose = False;
 
@@ -52,6 +56,27 @@ enum prop_flags {
 	PROP_FLAG_WRITEONLY = 4
 };
 
+
+/**
+ * How this works:
+ * Each parameter supported by xsetwacom has a struct param_t in the global
+ * parameters[] array.
+ * For 'standard' parameters that just modify a property, the prop_* fields
+ * are set to the matching property, format and offset. The get() function
+ * then handles the retrieval  of the property, the set() function handles
+ * the modification of the property.
+ *
+ * For parameters that need more than just triggering a property, the
+ * set_func and get_func point to the matching function to modify that
+ * particular parameter. example are the ButtonX parameters that call
+ * XSetDeviceButtonMapping instead of triggering a property.
+ *
+ * device_name is filled in automatically and just used to pass around the
+ * device name (since the XDevice* doesn't store this info). printformat is
+ * a flag that changes the output required, so that the -c and -s
+ * commandline arguments work.
+ */
+
 typedef struct _param
 {
 	const char *name;	/* param name as specified by the user */
@@ -59,6 +84,7 @@ typedef struct _param
 	const char *prop_name;	/* property name */
 	const int prop_format;	/* property format */
 	const int prop_offset;	/* offset (index) into the property values */
+	const int prop_extra;   /* extra number of items after first one */
 	const unsigned int prop_flags;
 	void (*set_func)(Display *dpy, XDevice *dev, struct _param *param, int argc, char **argv); /* handler function, if appropriate */
 	void (*get_func)(Display *dpy, XDevice *dev, struct _param *param, int argc, char **argv); /* handler function for getting, if appropriate */
@@ -68,22 +94,19 @@ typedef struct _param
 	enum printformat printformat;
 } param_t;
 
+/* get_func/set_func calls for special parameters */
 static void map_button(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
+static void map_wheels(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv);
 static void set_mode(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void get_mode(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void get_presscurve(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void get_button(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void set_rotate(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void get_rotate(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
-static void set_twinview(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
-static void get_twinview(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void set_xydefault(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void get_all(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
-static void not_implemented(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv)
-{
-	printf("Not implemented.\n");
-}
+static void set_output(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 
 static param_t parameters[] =
 {
@@ -355,16 +378,6 @@ static param_t parameters[] =
 		.get_func = get_presscurve,
 	},
 	{
-		.name = "TwinView",
-		.desc = "Sets the mapping to TwinView horizontal/vertical/none. "
-		"Values = none, vertical, horizontal (default is none).",
-		.prop_name = WACOM_PROP_DISPLAY_OPTS,
-		.prop_format = 8,
-		.prop_offset = 1,
-		.get_func = get_twinview,
-		.set_func = set_twinview,
-	},
-	{
 		.name = "Mode",
 		.desc = "Switches cursor movement mode (default is absolute/on). ",
 		.set_func = set_mode,
@@ -387,6 +400,39 @@ static param_t parameters[] =
 		.prop_format = 8,
 		.prop_offset = 0,
 		.prop_flags = PROP_FLAG_BOOLEAN
+	},
+	{
+		.name = "Gesture",
+		.desc = "Turns on/off multi-touch gesture events "
+		"(default is enable/on). ",
+		.prop_name = WACOM_PROP_ENABLE_GESTURE,
+		.prop_format = 8,
+		.prop_offset = 0,
+		.prop_flags = PROP_FLAG_BOOLEAN
+	},
+	{
+		.name = "ZoomDistance",
+		.desc = "Minimum distance for a zoom gesture "
+		"(default is 50). ",
+		.prop_name = WACOM_PROP_GESTURE_PARAMETERS,
+		.prop_format = 32,
+		.prop_offset = 0,
+	},
+	{
+		.name = "ScrollDistance",
+		.desc = "Minimum motion before sending a scroll gesture "
+		"(default is 20). ",
+		.prop_name = WACOM_PROP_GESTURE_PARAMETERS,
+		.prop_format = 32,
+		.prop_offset = 1,
+	},
+	{
+		.name = "TapTime",
+		.desc = "Minimum time between taps for a right click "
+		"(default is 250). ",
+		.prop_name = WACOM_PROP_GESTURE_PARAMETERS,
+		.prop_format = 32,
+		.prop_offset = 2,
 	},
 	{
 		.name = "Capacity",
@@ -420,6 +466,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_WHEELBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 0,
+		.set_func = map_wheels,
 	},
 	{
 		.name = "RelWDn",
@@ -427,6 +474,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_WHEELBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 1,
+		.set_func = map_wheels,
 	},
 	{
 		.name = "AbsWUp",
@@ -434,6 +482,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_WHEELBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 2,
+		.set_func = map_wheels,
 	},
 	{
 		.name = "AbsWDn",
@@ -441,6 +490,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_WHEELBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 3,
+		.set_func = map_wheels,
 	},
 	{
 		.name = "StripLUp",
@@ -448,6 +498,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_STRIPBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 0,
+		.set_func = map_wheels,
 	},
 	{
 		.name = "StripLDn",
@@ -455,6 +506,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_STRIPBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 1,
+		.set_func = map_wheels,
 	},
 	{
 		.name = "StripRUp",
@@ -462,6 +514,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_STRIPBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 2,
+		.set_func = map_wheels,
 	},
 	{
 		.name = "StripRDn",
@@ -469,20 +522,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_STRIPBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 3,
-	},
-	{
-		.name = "TVResolution0",
-		.desc = "Sets MetaModes option for TwinView Screen 0. ",
-		.prop_name = WACOM_PROP_TWINVIEW_RES,
-		.prop_format = 32,
-		.prop_offset = 0,
-	},
-	{
-		.name = "TVResolution1",
-		.desc = "Sets MetaModes option for TwinView Screen 1. ",
-		.prop_name = WACOM_PROP_TWINVIEW_RES,
-		.prop_format = 32,
-		.prop_offset = 1,
+		.set_func = map_wheels,
 	},
 	{
 		.name = "RawFilter",
@@ -494,9 +534,9 @@ static param_t parameters[] =
 		.prop_flags = PROP_FLAG_BOOLEAN
 	},
 	{
-		.name = "ClickForce",
+		.name = "Threshold",
 		.desc = "Sets tip/eraser pressure threshold "
-		"(default is 409)",
+		"(default is 27)",
 		.prop_name = WACOM_PROP_PRESSURE_THRESHOLD,
 		.prop_format = 32,
 		.prop_offset = 0,
@@ -517,262 +557,6 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_DISPLAY_OPTS,
 		.prop_format = 8,
 		.prop_offset = 2,
-	},
-	{
-		.name = "STopX0",
-		.desc = "Screen 0 left coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 0,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopY0",
-		.desc = "Screen 0 top coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 1,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomX0",
-		.desc = "Screen 0 right coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 2,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomY0",
-		.desc = "Screen 0 bottom coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 3,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopX1",
-		.desc = "Screen 1 left coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 4,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopY1",
-		.desc = "Screen 1 top coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 5,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomX1",
-		.desc = "Screen 1 right coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 6,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomY1",
-		.desc = "Screen 1 bottom coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 7,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopX2",
-		.desc = "Screen 2 left coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 8,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopY2",
-		.desc = "Screen 2 top coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 9,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomX2",
-		.desc = "Screen 2 right coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_offset = 10,
-		.prop_format = 32,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomY2",
-		.desc = "Screen 2 bottom coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 11,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopX3",
-		.desc = "Screen 3 left coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 12,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopY3",
-		.desc = "Screen 3 top coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 13,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomX3",
-		.desc = "Screen 3 right coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 14,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomY3",
-		.desc = "Screen 3 bottom coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 15,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopX4",
-		.desc = "Screen 4 left coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 16,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopY4",
-		.desc = "Screen 4 top coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 17,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomX4",
-		.desc = "Screen 4 right coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 18,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomY4",
-		.desc = "Screen 4 bottom coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 19,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopX5",
-		.desc = "Screen 5 left coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 20,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopY5",
-		.desc = "Screen 5 top coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 21,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomX5",
-		.desc = "Screen 5 right coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 22,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomY5",
-		.desc = "Screen 5 bottom coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 23,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopX6",
-		.desc = "Screen 6 left coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 24,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopY6",
-		.desc = "Screen 6 top coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 25,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomX6",
-		.desc = "Screen 6 right coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 26,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomY6",
-		.desc = "Screen 6 bottom coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 27,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopX7",
-		.desc = "Screen 7 left coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 28,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "STopY7",
-		"Screen 7 top coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 29,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomX7",
-		.desc = "Screen 7 right coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 30,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
-		.name = "SBottomY7",
-		.desc = "Screen 7 bottom coordinate in pixels. ",
-		.prop_name = WACOM_PROP_SCREENAREA,
-		.prop_format = 32,
-		.prop_offset = 31,
-		.prop_flags = PROP_FLAG_READONLY
 	},
 	{
 		.name = "ToolID",
@@ -807,16 +591,10 @@ static param_t parameters[] =
 		.prop_flags = PROP_FLAG_READONLY
 	},
 	{
-		.name = "NumScreen",
-		.desc = "Returns number of screens configured for the desktop. ",
-		.set_func = not_implemented,
-		.get_func = not_implemented,
-	},
-	{
-		.name = "XScaling",
-		.desc = "Returns the status of XSCALING is set or not. ",
-		.set_func = not_implemented,
-		.get_func = not_implemented,
+		.name = "MapToOutput",
+		.desc = "Map the device to the given output. ",
+		.set_func = set_output,
+		.prop_flags = PROP_FLAG_WRITEONLY
 	},
 	{
 		.name = "all",
@@ -825,6 +603,67 @@ static param_t parameters[] =
 		.prop_flags = PROP_FLAG_READONLY,
 	},
 	{ NULL }
+};
+
+struct modifier {
+	char *name;
+	char *converted;
+};
+
+static struct modifier modifiers[] = {
+	{"ctrl", "Control_L"},
+	{"ctl", "Control_L"},
+	{"control", "Control_L"},
+	{"lctrl", "Control_L"},
+	{"rctrl", "Control_R"},
+
+	{"meta", "Meta_L"},
+	{"lmeta", "Meta_L"},
+	{"rmeta", "Meta_R"},
+
+	{"alt", "Alt_L"},
+	{"lalt", "Alt_L"},
+	{"ralt", "Alt_R"},
+
+	{"shift", "Shift_L"},
+	{"lshift", "Shift_L"},
+	{"rshift", "Shift_R"},
+
+	{"super", "Super_L"},
+	{"lsuper", "Super_L"},
+	{"rsuper", "Super_R"},
+
+	{"hyper", "Hyper_L"},
+	{"lhyper", "Hyper_L"},
+	{"rhyper", "Hyper_R"},
+
+	{ NULL, NULL }
+};
+
+static struct modifier specialkeys[] = {
+	{"f1", "F1"}, {"f2", "F2"}, {"f3", "F3"},
+	{"f4", "F4"}, {"f5", "F5"}, {"f6", "F6"},
+	{"f7", "F7"}, {"f8", "F8"}, {"f9", "F9"},
+	{"f10", "F10"}, {"f11", "F11"}, {"f12", "F12"},
+	{"f13", "F13"}, {"f14", "F14"}, {"f15", "F15"},
+	{"f16", "F16"}, {"f17", "F17"}, {"f18", "F18"},
+	{"f19", "F19"}, {"f20", "F20"}, {"f21", "F21"},
+	{"f22", "F22"}, {"f23", "F23"}, {"f24", "F24"},
+	{"f25", "F25"}, {"f26", "F26"}, {"f27", "F27"},
+	{"f28", "F28"}, {"f29", "F29"}, {"f30", "F30"},
+	{"f31", "F31"}, {"f32", "F32"}, {"f33", "F33"},
+	{"f34", "F34"}, {"f35", "F35"},
+
+	{"esc", "Escape"}, {"Esc", "Escape"},
+
+	{"up", "Up"}, {"down", "Down"},
+	{"left", "Left"}, {"right", "Right"},
+
+	{"backspace", "BackSpace"}, {"Backspace", "BackSpace"},
+
+	{"tab", "Tab"},
+
+	{ NULL, NULL }
 };
 
 static param_t* find_parameter(char *name)
@@ -871,16 +710,17 @@ static void usage(void)
 	" -h, --help                 - usage\n"
 	" -v, --verbose              - verbose output\n"
 	" -V, --version              - version info\n"
-	" -d, --display disp_name    - override default display\n"
+	" -d, --display \"display\"  - override default display\n"
 	" -s, --shell                - generate shell commands for 'get'\n"
-	" -x, --xconf                - generate X.conf lines for 'get'\n");
+	" -x, --xconf                - generate xorg.conf lines for 'get'\n");
 
 	printf(
 	"\nCommands:\n"
-	" --list [dev|param]           - display known devices, parameters \n"
-	" --list mod                   - display supported modifier and specific keys for keystokes [not implemented}\n"
-	" --set dev_name param [values...] - set device parameter by name\n"
-	" --get dev_name param [param...] - get current device parameter(s) value by name\n");
+	" --list devices             - display detected devices\n"
+	" --list parameters          - display supported parameters\n"
+	" --list modifiers           - display supported modifier and specific keys for keystrokes\n"
+	" --set \"device name\" parameter [values...] - set device parameter by name\n"
+	" --get \"device name\" parameter [param...]  - get current device parameter(s) value by name\n");
 }
 
 
@@ -945,6 +785,32 @@ static XDevice* find_device(Display *display, char *name)
 	return dev;
 }
 
+/* Return True if the given device has the property, or False otherwise */
+static Bool test_property(Display *dpy, XDevice* dev, Atom prop)
+{
+	int nprops_return;
+	Atom *properties;
+	int found = False;
+
+	/* if no property is required, return success */
+	if (prop == None)
+		return True;
+
+	properties = XListDeviceProperties(dpy, dev, &nprops_return);
+
+	while(nprops_return--)
+	{
+		if (properties[nprops_return] == prop)
+		{
+			found = True;
+			break;
+		}
+	}
+
+	XFree(properties);
+	return found;
+}
+
 static void list_one_device(Display *dpy, XDeviceInfo *info)
 {
 	static int	wacom_prop = 0;
@@ -982,7 +848,9 @@ static void list_one_device(Display *dpy, XDeviceInfo *info)
 			if (nitems)
 			{
 				type_name = XGetAtomName(dpy, *(Atom*)data);
-				printf("%-16s %-10s\n", info->name, type_name);
+				printf("%-32s	id: %ld	type: %-10s\n",
+						info->name, info->id,
+						type_name);
 			}
 
 			XFree(data);
@@ -1029,10 +897,23 @@ static void list_param(Display *dpy)
 
 	while(param->name)
 	{
-		printf("%-16s - %16s%s\n", param->name, param->desc,
-			(param->set_func == not_implemented) ? " [not implemented]" : "");
+		printf("%-16s - %16s\n", param->name, param->desc);
 		param++;
 	}
+}
+
+static void list_mod(Display *dpy)
+{
+	struct modifier *m = modifiers;
+
+	printf("%d modifiers are supported:\n", ArrayLength(modifiers) - 1);
+	while(m->name)
+		printf("	%s\n", m++->name);
+
+	printf("\n%d specialkeys are supported:\n", ArrayLength(specialkeys) - 1);
+	m = specialkeys;
+	while(m->name)
+		printf("	%s\n", m++->name);
 }
 
 static void list(Display *dpy, int argc, char **argv)
@@ -1040,62 +921,35 @@ static void list(Display *dpy, int argc, char **argv)
 	TRACE("'list' requested.\n");
 	if (argc == 0)
 		list_devices(dpy);
-	else if (strcmp(argv[0], "dev") == 0)
+	else if (strcmp(argv[0], "dev") == 0 ||
+		 strcmp(argv[0], "devices") == 0)
 		list_devices(dpy);
-	else if (strcmp(argv[0], "param") == 0)
+	else if (strcmp(argv[0], "param") == 0 ||
+		 strcmp(argv[0], "parameters") == 0)
 		list_param(dpy);
+	else if (strcmp(argv[0], "mod") == 0 ||
+		 strcmp(argv[0], "modifiers") == 0)
+		list_mod(dpy);
 	else
 		printf("unknown argument to list.\n");
 }
-
 /*
  * Convert a list of random special keys to strings that can be passed into
  * XStringToKeysym
  */
 static char *convert_specialkey(const char *modifier)
 {
-	struct modifier {
-		char *name;
-		char *converted;
-	} modmap[] = {
-		{"ctrl", "Control_L"},
-		{"ctl", "Control_L"},
-		{"control", "Control_L"},
-		{"lctrl", "Control_L"},
-		{"rctrl", "Control_R"},
-
-		{"meta", "Meta_L"},
-		{"lmeta", "Meta_L"},
-		{"rmeta", "Meta_R"},
-
-		{"alt", "Alt_L"},
-		{"lalt", "Alt_L"},
-		{"ralt", "Alt_R"},
-
-		{"shift", "Shift_L"},
-		{"lshift", "Shift_L"},
-		{"rshift", "Shift_R"},
-
-		{"f1", "F1"}, {"f2", "F2"}, {"f3", "F3"},
-		{"f4", "F4"}, {"f5", "F5"}, {"f6", "F6"},
-		{"f7", "F7"}, {"f8", "F8"}, {"f9", "F9"},
-		{"f10", "F10"}, {"f11", "F11"}, {"f12", "F12"},
-		{"f13", "F13"}, {"f14", "F14"}, {"f15", "F15"},
-		{"f16", "F16"}, {"f17", "F17"}, {"f18", "F18"},
-		{"f19", "F19"}, {"f20", "F20"}, {"f21", "F21"},
-		{"f22", "F22"}, {"f23", "F23"}, {"f24", "F24"},
-		{"f25", "F25"}, {"f26", "F26"}, {"f27", "F27"},
-		{"f28", "F28"}, {"f29", "F29"}, {"f30", "F30"},
-		{"f31", "F31"}, {"f32", "F32"}, {"f33", "F33"},
-		{"f34", "F34"}, {"f35", "F35"},
-
-		{ NULL, NULL }
-	};
-
-	struct modifier *m = modmap;
+	struct modifier *m = modifiers;
 
 	while(m->name && strcasecmp(modifier, m->name))
 		m++;
+
+	if (!m->name)
+	{
+		m = specialkeys;
+		while(m->name && strcasecmp(modifier, m->name))
+			m++;
+	}
 
 	return m->converted ? m->converted : (char*)modifier;
 }
@@ -1126,18 +980,56 @@ static int is_modifier(const char* modifier)
 	return 0;
 }
 
-static int special_map_keystrokes(int argc, char **argv, unsigned long *ndata, unsigned long* data);
-static int special_map_button(int argc, char **argv, unsigned long *ndata, unsigned long* data);
+static int special_map_keystrokes(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long* data);
+static int special_map_button(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long* data);
+static int special_map_core(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data);
+static int special_map_modetoggle(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data);
+static int special_map_displaytoggle(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data);
 
 /* Valid keywords for the --set ButtonX options */
 struct keywords {
 	const char *keyword;
-	int (*func)(int, char **, unsigned long*, unsigned long *);
+	int (*func)(Display*, int, char **, unsigned long*, unsigned long *);
 } keywords[] = {
 	{"key", special_map_keystrokes},
 	{"button", special_map_button},
+	{"core", special_map_core},
+	{"modetoggle", special_map_modetoggle},
+	{"displaytoggle", special_map_displaytoggle},
 	{ NULL, NULL }
 };
+
+/* the "core" keyword isn't supported anymore, we just have this here to
+   tell people that. */
+static int special_map_core(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data)
+{
+	static int once_only = 1;
+	if (once_only)
+	{
+		printf ("Note: The \"core\" keyword is not supported anymore and "
+			"will be ignored.\n");
+		once_only = 0;
+	}
+	return 0;
+}
+
+static int special_map_modetoggle(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data)
+{
+	data[*ndata] = AC_MODETOGGLE;
+
+	*ndata += 1;
+
+	return 0;
+}
+
+static int special_map_displaytoggle(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data)
+{
+	data[*ndata] = AC_DISPLAYTOGGLE;
+
+	*ndata += 1;
+
+	return 0;
+}
 
 static inline int is_valid_keyword(const char *keyword)
 {
@@ -1152,7 +1044,7 @@ static inline int is_valid_keyword(const char *keyword)
 	return 0;
 }
 
-static int special_map_button(int argc, char **argv, unsigned long *ndata, unsigned long *data)
+static int special_map_button(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data)
 {
 	int nitems = 0;
 	int i;
@@ -1168,9 +1060,6 @@ static int special_map_button(int argc, char **argv, unsigned long *ndata, unsig
 			if (is_valid_keyword(btn))
 				break;
 
-			if (sscanf(btn, "%d", &button) != 1)
-				return nitems;
-
 			switch (btn[0])
 			{
 				case '+': need_press = 1; break;
@@ -1181,6 +1070,10 @@ static int special_map_button(int argc, char **argv, unsigned long *ndata, unsig
 			}
 		} else
 			need_press = need_release = 1;
+
+		if (sscanf(btn, "%d", &button) != 1)
+			return nitems;
+
 
 		TRACE("Button map %d [%s,%s]\n", abs(button),
 				need_press ?  "press" : "",
@@ -1196,11 +1089,44 @@ static int special_map_button(int argc, char **argv, unsigned long *ndata, unsig
 	return nitems;
 }
 
+/* Return the first keycode to have the required keysym in the current group.
+   TODOs:
+   - parse other groups as well (do we need this?)
+   - for keysyms not on level 0, return the keycodes for the modifiers as
+     well
+*/
+static int keysym_to_keycode(Display *dpy, KeySym sym)
+{
+	static XkbDescPtr xkb = NULL;
+	XkbStateRec state;
+	int group;
+	int kc = 0;
+
+
+	if (!xkb)
+		xkb = XkbGetKeyboard(dpy, XkbAllComponentsMask, XkbUseCoreKbd);
+	XkbGetState(dpy, XkbUseCoreKbd, &state);
+	group = state.group;
+
+	for (kc = xkb->min_key_code; kc <= xkb->max_key_code; kc++)
+	{
+		KeySym* ks;
+		int i;
+
+		ks = XkbKeySymsPtr(xkb, kc);
+		for (i = 0; i < XkbKeyGroupWidth(xkb, kc, state.group); i++)
+			if (ks[i] == sym)
+				goto out;
+	}
+
+out:
+	return kc;
+}
 /*
    Map gibberish like "ctrl alt f2" into the matching AC_KEY values.
    Returns 1 on success or 0 otherwise.
  */
-static int special_map_keystrokes(int argc, char **argv, unsigned long *ndata, unsigned long* data)
+static int special_map_keystrokes(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long* data)
 {
 	int i;
 	int nitems = 0;
@@ -1208,6 +1134,7 @@ static int special_map_keystrokes(int argc, char **argv, unsigned long *ndata, u
 	for (i = 0; i < argc; i++)
 	{
 		KeySym ks;
+		KeyCode kc;
 		int need_press = 0, need_release = 0;
 		char *key = argv[i];
 
@@ -1248,12 +1175,14 @@ static int special_map_keystrokes(int argc, char **argv, unsigned long *ndata, u
 			need_press = need_release = 1;
 
 		ks = XStringToKeysym(key);
-		if (need_press)
-			data[*ndata + nitems++] = AC_KEY | AC_KEYBTNPRESS | ks;
-		if (need_release)
-			data[*ndata + nitems++] = AC_KEY | ks;
+		kc = keysym_to_keycode(dpy, ks);
 
-		TRACE("Key map %ld ('%s') [%s,%s]\n", ks,
+		if (need_press)
+			data[*ndata + nitems++] = AC_KEY | AC_KEYBTNPRESS | kc;
+		if (need_release)
+			data[*ndata + nitems++] = AC_KEY | kc;
+
+		TRACE("Key map %ld (%d, '%s') [%s,%s]\n", ks, kc,
 				XKeysymToString(ks),
 				need_press ?  "press" : "",
 				need_release ?  "release" : "");
@@ -1311,14 +1240,67 @@ static int get_button_number_from_string(const char* string)
 	return atoi(&string[strlen("Button")]);
 }
 
-/* Handles complex button mappings through button actions. */
-static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
+static const char *wheel_act_prop[] = {
+	"Wacom Rel Wheel Up Action",
+	"Wacom Rel Wheel Down Action",
+	"Wacom Abs Wheel Up Action",
+	"Wacom Abs Wheel Down Action",
+};
+
+/**
+ * Convert the given property from an 8 bit integer property into an action
+ * atom property. In the default case, this means that a property with
+ * values "4 5 4 5" ends up to have the values
+ * "Wacom RHU Action" "Wacom RHW Action" "Wacom AWU Action" "Wacom AWD
+ * Action"
+ * with each of the properties having :
+ * AC_BUTTON | AC_KEYBTNPRESS | 4 (or 5)
+ * AC_BUTTON | 4 (or 5)
+ *
+ * return 0 on success or 1 on failure.
+ */
+static int convert_wheel_prop(Display *dpy, XDevice *dev, Atom btnact_prop)
 {
-	Atom btnact_prop, prop;
-	unsigned long *data, *btnact_data;
-	int slen = strlen("Button");
-	int btn_no;
+	int i;
 	Atom type;
+	int format;
+	unsigned long btnact_nitems, bytes_after;
+	unsigned char *btnact_data; /* current values (button mappings) */
+	unsigned long *btnact_new_data; /* new values (action atoms) */
+
+	XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
+				AnyPropertyType, &type, &format, &btnact_nitems,
+				&bytes_after, (unsigned char**)&btnact_data);
+
+	btnact_new_data = calloc(btnact_nitems, sizeof(Atom));
+	if (!btnact_new_data)
+		return 1;
+
+	for (i = 0; i < btnact_nitems; i++) {
+		unsigned long action_data[2];
+		Atom prop = XInternAtom(dpy, wheel_act_prop[i], False);
+
+		action_data[0] = AC_BUTTON | AC_KEYBTNPRESS | btnact_data[i];
+		action_data[1] = AC_BUTTON | btnact_data[i];
+
+		XChangeDeviceProperty(dpy, dev, prop, XA_INTEGER, 32,
+				      PropModeReplace,
+				      (unsigned char*)action_data, 2);
+
+		btnact_new_data[i] = prop;
+	}
+
+	XChangeDeviceProperty(dpy, dev, btnact_prop, XA_ATOM, 32,
+				PropModeReplace,
+				(unsigned char*)btnact_new_data, btnact_nitems);
+	return 0;
+}
+
+
+static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, int offset, int argc, char **argv)
+{
+	unsigned long *data, *btnact_data;
+	Atom type, prop = 0;
 	int format;
 	unsigned long btnact_nitems, nitems, bytes_after;
 	int need_update = 0;
@@ -1326,35 +1308,41 @@ static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int 
 	int nwords = 0;
 	char **words = NULL;
 
-	TRACE("Special %s map for device %ld.\n", param->name, dev->device_id);
-
-	if (slen >= strlen(param->name) || strncmp(param->name, "Button", slen))
-		return;
-
-	btnact_prop = XInternAtom(dpy, "Wacom Button Actions", True);
-	if (!btnact_prop)
-		return;
-
-	btn_no = get_button_number_from_string(param->name);
-	btn_no--; /* property is zero-indexed, button numbers are 1-indexed */
-
 	XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
 				AnyPropertyType, &type, &format, &btnact_nitems,
 				&bytes_after, (unsigned char**)&btnact_data);
 
-	if (btn_no > btnact_nitems)
+	if (offset > btnact_nitems)
 		return;
 
-	/* some atom already assigned, modify that */
-	if (btnact_data[btn_no])
-		prop = btnact_data[btn_no];
+	/* Prop is currently 8 bit integer, i.e. plain button
+	 * mappings. Convert to 32 bit Atom actions first.
+	 */
+	if (format == 8 && type == XA_INTEGER)
+	{
+		if (convert_wheel_prop(dpy, dev, btnact_prop))
+			return;
+
+		XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
+				   AnyPropertyType, &type, &format,
+				   &btnact_nitems, &bytes_after,
+				   (unsigned char**)&btnact_data);
+	}
+
+	if (argc == 0) /* unset property */
+	{
+		prop = btnact_data[offset];
+		btnact_data[offset] = 0;
+	} else if (btnact_data[offset])
+		/* some atom already assigned, modify that */
+		prop = btnact_data[offset];
 	else
 	{
 		char buff[64];
-		sprintf(buff, "Wacom button action %d", (btn_no + 1));
+		sprintf(buff, "Wacom button action %d", (offset + 1));
 		prop = XInternAtom(dpy, buff, False);
 
-		btnact_data[btn_no] = prop;
+		btnact_data[offset] = prop;
 		need_update = 1;
 	}
 
@@ -1371,7 +1359,7 @@ static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int 
 			int parsed = 0;
 			if (strcasecmp(words[i], keywords[j].keyword) == 0)
 			{
-				parsed = keywords[j].func(nwords - i - 1,
+				parsed = keywords[j].func(dpy, nwords - i - 1,
 							  &words[i + 1],
 							  &nitems, data);
 				i += parsed;
@@ -1383,16 +1371,70 @@ static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int 
 		}
 	}
 
-	XChangeDeviceProperty(dpy, dev, prop, XA_INTEGER, 32,
-				PropModeReplace,
-				(unsigned char*)data, nitems);
-
-	if (need_update)
-		XChangeDeviceProperty(dpy, dev, btnact_prop, XA_ATOM, 32,
+	if (argc > 0) /* unset property */
+		XChangeDeviceProperty(dpy, dev, prop, XA_INTEGER, 32,
 					PropModeReplace,
-					(unsigned char*)btnact_data,
-					btnact_nitems);
+					(unsigned char*)data, nitems);
+
+	XChangeDeviceProperty(dpy, dev, btnact_prop, XA_ATOM, 32,
+				PropModeReplace,
+				(unsigned char*)btnact_data,
+				btnact_nitems);
+
+	if (argc == 0 && prop)
+		XDeleteDeviceProperty(dpy, dev, prop);
+
 	XFlush(dpy);
+}
+
+
+static void special_map_wheels(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
+{
+	Atom wheel_prop;
+
+	wheel_prop = XInternAtom(dpy, param->prop_name, True);
+	if (!wheel_prop)
+		return;
+
+	TRACE("Wheel property %s (%ld)\n", param->prop_name, wheel_prop);
+
+	special_map_property(dpy, dev, wheel_prop, param->prop_offset, argc, argv);
+}
+
+static void map_wheels(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
+{
+	if (argc <= 0)
+		return;
+
+	TRACE("Mapping wheel %s for device %ld.\n", param->name, dev->device_id);
+
+	/* FIXME:
+	   if value is simple number, change back to 8 bit integer
+	 */
+
+	special_map_wheels(dpy, dev, param, argc, argv);
+}
+
+/* Handles complex button mappings through button actions. */
+static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
+{
+	Atom btnact_prop;
+	int slen = strlen("Button");
+	int btn_no;
+
+	TRACE("Special %s map for device %ld.\n", param->name, dev->device_id);
+
+	if (slen >= strlen(param->name) || strncmp(param->name, "Button", slen))
+		return;
+
+	btnact_prop = XInternAtom(dpy, "Wacom Button Actions", True);
+	if (!btnact_prop)
+		return;
+
+	btn_no = get_button_number_from_string(param->name);
+	btn_no--; /* property is zero-indexed, button numbers are 1-indexed */
+
+	special_map_property(dpy, dev, btnact_prop, btn_no, argc, argv);
 }
 
 
@@ -1407,18 +1449,23 @@ static void map_button_simple(Display *dpy, XDevice *dev, param_t* param, int bu
 		return;
 
 	nmap = XGetDeviceButtonMapping(dpy, dev, map, nmap);
-	if (btn_no >= nmap)
+	if (btn_no > nmap)
 	{
 		fprintf(stderr, "Button number does not exist on device.\n");
 		return;
 	}
 
+	TRACE("Mapping button %d to %d.\n", btn_no, button);
+
 	map[btn_no - 1] = button;
 	XSetDeviceButtonMapping(dpy, dev, map, nmap);
 	XFlush(dpy);
+
+	/* If there's a property set, unset it */
+	special_map_buttons(dpy, dev, param, 0, NULL);
 }
 /*
-   Supports three variations.
+   Supports two variations, simple mapping and special mapping:
    xsetwacom set device Button1 1
 	- maps button 1 to logical button 1
    xsetwacom set device Button1 "key a b c d"
@@ -1525,8 +1572,12 @@ static void set_rotate(Display *dpy, XDevice *dev, param_t* param, int argc, cha
 		rotation = 3;
 	else if (strcasecmp(argv[0], "NONE") == 0)
 		rotation = 0;
-	else
-		goto error;
+	else if (strlen(argv[0]) == 1)
+	{
+		rotation = atoi(argv[0]);
+		if (rotation < 0 || rotation > 3)
+			goto error;
+	}
 
 	prop = XInternAtom(dpy, param->prop_name, True);
 	if (!prop)
@@ -1558,58 +1609,6 @@ error:
 	return;
 }
 
-static void set_twinview(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
-{
-	int twinview = 0;
-	Atom prop, type;
-	int format;
-	unsigned char* data;
-	unsigned long nitems, bytes_after;
-
-	if (argc != 1)
-		goto error;
-
-	TRACE("TwinView '%s' for device %ld.\n", argv[0], dev->device_id);
-
-	if (strcasecmp(argv[0], "none") == 0)
-		twinview = TV_NONE;
-	else if (strcasecmp(argv[0], "horizontal") == 0)
-		twinview = TV_LEFT_RIGHT;
-	else if (strcasecmp(argv[0], "vertical") == 0)
-		twinview = TV_ABOVE_BELOW;
-	else
-		goto error;
-
-	prop = XInternAtom(dpy, param->prop_name, True);
-	if (!prop)
-	{
-		fprintf(stderr, "Property for '%s' not available.\n",
-			param->name);
-		return;
-	}
-
-	XGetDeviceProperty(dpy, dev, prop, 0, 1000, False, AnyPropertyType,
-				&type, &format, &nitems, &bytes_after, &data);
-
-	if (nitems == 0 || format != 8)
-	{
-		fprintf(stderr, "Property for '%s' has no or wrong value - this is a bug.\n",
-			param->name);
-		return;
-	}
-
-	data[param->prop_offset] = twinview;
-	XChangeDeviceProperty(dpy, dev, prop, type, format,
-				PropModeReplace, data, nitems);
-	XFlush(dpy);
-
-	return;
-
-error:
-	fprintf(stderr, "Usage: xsetwacom rotate <device name> [NONE | CW | CCW | HALF]\n");
-	return;
-}
-
 static int convert_value_from_user(param_t *param, char *value)
 {
 	int val;
@@ -1628,7 +1627,7 @@ static void set(Display *dpy, int argc, char **argv)
 {
 	param_t *param;
 	XDevice *dev = NULL;
-	Atom prop, type;
+	Atom prop = None, type;
 	int format;
 	unsigned char* data = NULL;
 	unsigned long nitems, bytes_after;
@@ -1663,17 +1662,22 @@ static void set(Display *dpy, int argc, char **argv)
 	{
 		printf("'%s' is a read-only option.\n", argv[1]);
 		goto out;
-	} else if (param->set_func)
-	{
-		param->set_func(dpy, dev, param, argc - 2, &argv[2]);
-		goto out;
 	}
 
-	prop = XInternAtom(dpy, param->prop_name, True);
-	if (!prop)
+	if (param->prop_name)
 	{
-		fprintf(stderr, "Property for '%s' not available.\n",
-			param->name);
+		prop = XInternAtom(dpy, param->prop_name, True);
+		if (!prop || !test_property(dpy, dev, prop))
+		{
+			printf("Property '%s' does not exist on device.\n",
+				param->prop_name);
+			goto out;
+		}
+	}
+
+	if (param->set_func)
+	{
+		param->set_func(dpy, dev, param, argc - 2, &argv[2]);
 		goto out;
 	}
 
@@ -1809,48 +1813,6 @@ static void get_rotate(Display *dpy, XDevice *dev, param_t* param, int argc, cha
 	return;
 }
 
-static void get_twinview(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv)
-{
-	char *twinview = NULL;
-	Atom prop, type;
-	int format;
-	unsigned char* data;
-	unsigned long nitems, bytes_after;
-
-	prop = XInternAtom(dpy, param->prop_name, True);
-	if (!prop)
-	{
-		fprintf(stderr, "Property for '%s' not available.\n",
-			param->name);
-		return;
-	}
-
-	TRACE("Getting twinview setting for device %ld.\n", dev->device_id);
-
-	XGetDeviceProperty(dpy, dev, prop, 0, 1000, False, AnyPropertyType,
-				&type, &format, &nitems, &bytes_after, &data);
-
-	if (nitems == 0 || format != 8)
-	{
-		fprintf(stderr, "Property for '%s' has no or wrong value - this is a bug.\n",
-			param->name);
-		return;
-	}
-
-	switch(data[param->prop_offset])
-	{
-		case TV_NONE: twinview = "none"; break;
-		case TV_ABOVE_BELOW: twinview = "vertical"; break;
-		case TV_LEFT_RIGHT: twinview = "horizontal"; break;
-		default:
-				    break;
-	}
-
-	print_value(param, "%s", twinview);
-
-	return;
-}
-
 static void get_presscurve(Display *dpy, XDevice *dev, param_t *param, int argc,
 				char **argv)
 {
@@ -1886,6 +1848,104 @@ static void get_presscurve(Display *dpy, XDevice *dev, param_t *param, int argc,
 	print_value(param, "%s", buff);
 }
 
+static int get_special_button_map(Display *dpy, XDevice *dev,
+				  param_t *param, int btn_no)
+{
+	Atom btnact_prop, action_prop;
+	unsigned long *btnact_data;
+	Atom type;
+	int format;
+	unsigned long btnact_nitems, bytes_after;
+	int i;
+	char buff[1024] = {0};
+
+	btnact_prop = XInternAtom(dpy, "Wacom Button Actions", True);
+
+	if (!btnact_prop)
+		return 0;
+
+	XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
+			   AnyPropertyType, &type, &format, &btnact_nitems,
+			   &bytes_after, (unsigned char**)&btnact_data);
+
+	/* button numbers start at 1, property is zero-indexed */
+	if (btn_no >= btnact_nitems)
+		return 0;
+
+	/* FIXME: doesn't cover wheels/strips at the moment, they can be 8
+	 * bits (plain buttons) or 32 bits (complex actions) */
+
+	action_prop = btnact_data[btn_no - 1];
+	if (!action_prop)
+		return 0;
+
+	XFree(btnact_data);
+
+	XGetDeviceProperty(dpy, dev, action_prop, 0, 100, False,
+			   AnyPropertyType, &type, &format, &btnact_nitems,
+			   &bytes_after, (unsigned char**)&btnact_data);
+
+	if (format != 32 && type != XA_ATOM)
+		return 0;
+
+	for (i = 0; i < btnact_nitems; i++)
+	{
+		static int last_type, last_press;
+		unsigned long action = btnact_data[i];
+		int current_type;
+		int detail;
+		int is_press = -1;
+		char str[32] = {0};
+		char press_str = ' ';
+
+		current_type = action & AC_TYPE;
+		detail = action & AC_CODE;
+
+
+		switch (current_type)
+		{
+			case AC_KEY:
+				if (last_type != current_type)
+					strcat(buff, "key ");
+				is_press = !!(action & AC_KEYBTNPRESS);
+				detail = XKeycodeToKeysym(dpy, detail, 0);
+				break;
+			case AC_BUTTON:
+				if (last_type != current_type)
+					strcat(buff, "button ");
+				is_press = !!(action & AC_KEYBTNPRESS);
+				break;
+			case AC_MODETOGGLE:
+				strcat(buff, "modetoggle ");
+				break;
+			case AC_DISPLAYTOGGLE:
+				strcat(buff, "displaytoggle ");
+				break;
+			default:
+				TRACE("unknown type %d\n", current_type);
+				continue;
+		}
+
+		press_str = (is_press == -1) ? ' ' : ((is_press) ?  '+' : '-');
+		if (current_type == AC_KEY)
+			sprintf(str, "%c%s ", press_str,
+				XKeysymToString(detail));
+		else
+			sprintf(str, "%c%d ", press_str, detail);
+		strcat(buff, str);
+		last_type = current_type;
+		last_press = is_press;
+	}
+
+	TRACE("%s\n", buff);
+
+	XFree(btnact_data);
+
+	print_value(param, "%s", buff);
+
+	return 1;
+}
+
 static void get_button(Display *dpy, XDevice *dev, param_t *param, int argc,
 			char **argv)
 {
@@ -1897,7 +1957,11 @@ static void get_button(Display *dpy, XDevice *dev, param_t *param, int argc,
 	if (btn_no == -1)
 		return;
 
-	TRACE("Getting button map curve for device %ld.\n", dev->device_id);
+	TRACE("Getting button map for device %ld.\n", dev->device_id);
+
+	/* if there's a special map, print it and return */
+	if (get_special_button_map(dpy, dev, param, btn_no))
+		return;
 
 	nmap = XGetDeviceButtonMapping(dpy, dev, map, nmap);
 
@@ -1913,13 +1977,133 @@ static void get_button(Display *dpy, XDevice *dev, param_t *param, int argc,
 	XFlush(dpy);
 }
 
+static void _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
+{
+	Atom matrix_prop = XInternAtom(dpy, "Coordinate Transformation Matrix", True);
+	Atom type;
+	int format;
+	unsigned long nitems, bytes_after;
+	float *data;
+	long matrix[9] = {0};
+	int i;
+
+	if (!matrix_prop)
+	{
+		fprintf(stderr, "Server does not support transformation");
+		return;
+	}
+
+	/* XI1 expects 32 bit properties (including float) as long,
+	 * regardless of architecture */
+	for (i = 0; i < sizeof(matrix)/sizeof(matrix[0]); i++)
+		*(float*)(matrix + i) = fmatrix[i];
+
+	XGetDeviceProperty(dpy, dev, matrix_prop, 0, 9, False,
+				AnyPropertyType, &type, &format, &nitems,
+				&bytes_after, (unsigned char**)&data);
+
+	if (format != 32 || type != XInternAtom(dpy, "FLOAT", True))
+		return;
+
+	XChangeDeviceProperty(dpy, dev, matrix_prop, type, format,
+			      PropModeReplace, (unsigned char*)matrix, 9);
+	XFree(data);
+	XFlush(dpy);
+}
+
+static void set_output(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv)
+{
+	int min, maj;
+	int i, found = 0;
+	char *output_name;
+	XRRScreenResources *res;
+	XRROutputInfo *output_info;
+	XRRCrtcInfo *crtc_info;
+
+	output_name = argv[0];
+
+	if (!XRRQueryExtension(dpy, &maj, &min)) /* using min/maj as dummy */
+	{
+		fprintf(stderr, "Server does not support RandR");
+		return;
+	}
+
+	if (!XRRQueryVersion(dpy, &maj, &min) ||
+	    (maj * 1000 + min) < 1002)
+	{
+		fprintf(stderr, "Server does not support RandR 1.2");
+		return;
+	}
+
+
+	res = XRRGetScreenResources(dpy, DefaultRootWindow(dpy));
+
+	for (i = 0; i < res->noutput && !found; i++)
+	{
+		output_info = XRRGetOutputInfo(dpy, res, res->outputs[i]);
+
+		TRACE("Found output '%s' (%s)\n", output_info->name,
+		      output_info->connection == RR_Connected ? "connected" : "disconnnected");
+
+		if (!output_info->crtc || output_info->connection != RR_Connected)
+			continue;
+
+		crtc_info = XRRGetCrtcInfo (dpy, res, output_info->crtc);
+		TRACE("CRTC (%dx%d) %dx%d\n", crtc_info->x, crtc_info->y,
+			crtc_info->width, crtc_info->height);
+
+		if (strcmp(output_info->name, output_name) == 0)
+		{
+			found = 1;
+			break;
+		}
+	}
+
+	/* crtc holds our screen info, need to compare to actual screen size */
+	if (found)
+	{
+		int width = DisplayWidth(dpy, DefaultScreen(dpy));
+		int height = DisplayHeight(dpy, DefaultScreen(dpy));
+
+		/* offset */
+		float x = 1.0 * crtc_info->x/width;
+		float y = 1.0 * crtc_info->y/height;
+
+		/* mapping */
+		float w = 1.0 * crtc_info->width/width;
+		float h = 1.0 * crtc_info->height/height;
+
+		float matrix[9] = { 1, 0, 0,
+				    0, 1, 0,
+				    0, 0, 1};
+		matrix[2] = x;
+		matrix[5] = y;
+		matrix[0] = w;
+		matrix[4] = h;
+
+		TRACE("Transformation matrix:\n");
+		TRACE("	[ %f %f %f ]\n", matrix[0], matrix[1], matrix[2]);
+		TRACE("	[ %f %f %f ]\n", matrix[3], matrix[4], matrix[5]);
+		TRACE("	[ %f %f %f ]\n", matrix[6], matrix[7], matrix[8]);
+
+		_set_matrix_prop(dpy, dev, matrix);
+	} else
+		printf("Unable to find output '%s'. "
+			"Output may not be connected.\n", output_name);
+
+	XRRFreeScreenResources(res);
+}
+
 static void get_all(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv)
 {
 	param_t *p = parameters;
 
+	if (param->printformat == FORMAT_DEFAULT)
+		param->printformat = FORMAT_XORG_CONF;
+
 	while(p->name)
 	{
-		if (p != param)
+		if (p != param && !(p->prop_flags & PROP_FLAG_WRITEONLY))
 		{
 			p->device_name = param->device_name;
 			p->printformat = param->printformat;
@@ -1971,22 +2155,27 @@ static void get(Display *dpy, enum printformat printformat, int argc, char **arg
 
 static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv)
 {
-	Atom prop, type;
+	Atom prop = None, type;
 	int format;
 	unsigned char* data;
 	unsigned long nitems, bytes_after;
+	int i;
+	char str[100] = {0};
+
+	if (param->prop_name)
+	{
+		prop = XInternAtom(dpy, param->prop_name, True);
+		if (!prop || !test_property(dpy, dev, prop))
+		{
+			printf("Property '%s' does not exist on device.\n",
+				param->prop_name);
+			return;
+		}
+	}
 
 	if (param->get_func)
 	{
 		param->get_func(dpy, dev, param, argc, argv);
-		return;
-	}
-
-	prop = XInternAtom(dpy, param->prop_name, True);
-	if (!prop)
-	{
-		fprintf(stderr, "Property for '%s' not available.\n",
-			param->name);
 		return;
 	}
 
@@ -2003,30 +2192,38 @@ static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char
 	switch(param->prop_format)
 	{
 		case 8:
+			for (i = 0; i < 1 + param->prop_extra; i++)
 			{
-				char str[10] = {0};
-				int val = data[param->prop_offset];
+				int val = data[param->prop_offset + i];
 
 				if (param->prop_flags & PROP_FLAG_BOOLEAN)
-					sprintf(str, "%s", val ?  "on" : "off");
+					sprintf(&str[strlen(str)], "%s", val ?  "on" : "off");
 				else
-					sprintf(str, "%d", val);
-				print_value(param, "%s", str);
+					sprintf(&str[strlen(str)], "%d", val);
+
+				if (i < param->prop_extra)
+					strcat(str, " ");
 			}
+			print_value(param, "%s", str);
 			break;
 		case 32:
+			for (i = 0; i < 1 + param->prop_extra; i++)
 			{
 				long *ldata = (long*)data;
-				print_value(param, "%ld", ldata[param->prop_offset]);
-				break;
+				sprintf(&str[strlen(str)], "%ld", ldata[param->prop_offset + i]);
+
+				if (i < param->prop_extra)
+					strcat(str, " ");
 			}
+			print_value(param, "%s", str);
+			break;
 	}
 }
 
 
 int main (int argc, char **argv)
 {
-	char c;
+	int c;
 	int optidx;
 	char *display = NULL;
 	Display *dpy;
@@ -2140,4 +2337,4 @@ int main (int argc, char **argv)
 }
 
 
-/* vim: set noexpandtab shiftwidth=8: */
+/* vim: set noexpandtab tabstop=8 shiftwidth=8: */

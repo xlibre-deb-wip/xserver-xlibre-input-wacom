@@ -26,18 +26,32 @@
 #include <asm/types.h>
 #include <linux/input.h>
 #define MAX_USB_EVENTS 32
-#define WACOM_VENDOR_ID 0x056a  /* vendor ID on the kernel device */
+
+/* vendor IDs on the kernel device */
+#define WACOM_VENDOR_ID 0x056a
+#define WALTOP_VENDOR_ID 0x172F
+#define NTRIG_VENDOR_ID 0x1b96
+#define HANWANG_VENDOR_ID 0x0b57
+#define LENOVO_VENDOR_ID 0x17ef
 
 #define DEFAULT_SUPPRESS 2      /* default suppress */
 #define MAX_SUPPRESS 100        /* max value of suppress */
 #define BUFFER_SIZE 256         /* size of reception buffer */
 #define MAXTRY 3                /* max number of try to receive magic number */
+#define MIN_ROTATION  -900      /* the minimum value of the marker pen rotation */
+#define MAX_ROTATION_RANGE 1800 /* the maximum range of the marker pen rotation */
+#define MAX_ABS_WHEEL 1023      /* the maximum value of absolute wheel */
+
+#define MIN_PAD_RING 0		/* I4 absolute scroll ring min value */
+#define MAX_PAD_RING 71		/* I4 absolute scroll ring max value */
 
 /* Default max distance to the tablet at which a proximity-out event is generated for
  * cursor device (e.g. mouse). 
  */
 #define PROXOUT_INTUOS_DISTANCE		10
 #define PROXOUT_GRAPHIRE_DISTANCE	42
+
+/* 2.6.28 */
 
 #ifndef BTN_TOOL_DOUBLETAP
 #define BTN_TOOL_DOUBLETAP 0x14d
@@ -47,12 +61,38 @@
 #define BTN_TOOL_TRIPLETAP 0x14e
 #endif
 
+/* 2.6.30 */
+
+#ifndef ABS_MT_POSITION_X
+#define ABS_MT_POSITION_X 0x35
+#endif
+
+#ifndef ABS_MT_POSITION_Y
+#define ABS_MT_POSITION_Y 0x36
+#endif
+
+#ifndef ABS_MT_TRACKING_ID
+#define ABS_MT_TRACKING_ID 0x39
+#endif
+
+/* 2.6.33 */
+
+#ifndef ABS_MT_PRESSURE
+#define ABS_MT_PRESSURE 0x3a
+#endif
+
+/* 2.6.36 */
+
+#ifndef ABS_MT_SLOT
+#define ABS_MT_SLOT 0x2f
+#endif
+
 /* defines to discriminate second side button and the eraser */
 #define ERASER_PROX     4
 #define OTHER_PROX      1
 
 /* to access kernel defined bits */
-#define BIT(x)		(1<<((x) & (BITS_PER_LONG - 1)))
+#define BIT(x)		(1UL<<((x) & (BITS_PER_LONG - 1)))
 #define BITS_PER_LONG	(sizeof(long) * 8)
 #define NBITS(x)	((((x)-1)/BITS_PER_LONG)+1)
 #define ISBITSET(x,y)	((x)[LONG(y)] & BIT(y))
@@ -84,13 +124,13 @@ struct _WacomModel
 	const char* name;
 
 	void (*Initialize)(WacomCommonPtr common, const char* id, float version);
-	void (*GetResolution)(LocalDevicePtr local);
-	int (*GetRanges)(LocalDevicePtr local);
-	int (*Start)(LocalDevicePtr local);
-	int (*Parse)(LocalDevicePtr local, const unsigned char* data, int len);
+	void (*GetResolution)(InputInfoPtr pInfo);
+	int (*GetRanges)(InputInfoPtr pInfo);
+	int (*Start)(InputInfoPtr pInfo);
+	int (*Parse)(InputInfoPtr pInfo, const unsigned char* data, int len);
 	int (*FilterRaw)(WacomCommonPtr common, WacomChannelPtr pChannel,
 		WacomDeviceStatePtr ds);
-	int (*DetectConfig)(LocalDevicePtr local);
+	int (*DetectConfig)(InputInfoPtr pInfo);
 };
 
 /******************************************************************************
@@ -110,19 +150,41 @@ struct _WacomModel
 #define ERASER_ID		0x00000008
 #define PAD_ID			0x00000010
 
+/* Each tablet may have one or more of the following
+ * features */
+#define WCM_PEN			0x00000001 /* Tablet supports pens */
+#define WCM_PAD			0x00000002 /* Has a pad tool */
+
+#define WCM_1FGT		0x00000004 /* One finger touch */
+#define WCM_2FGT		0x00000008 /* Two finger touch */
+#define WCM_STRIP		0x00000010 /* Tablet has menu strip (e.g.
+					      Intuos3) */
+#define WCM_RING		0x00000020 /* Tablet has touch ring (e.g.
+					      Intuos4) */
+#define WCM_DUALINPUT		0x00000040 /* Supports two tools on the
+					      tablet simultaneously (Intuos
+					      1 and 2) */
+#define WCM_ROTATION		0x00000080 /* Needs to convert mouse tool
+					      tilt to rotation */
+#define WCM_LCD			0x00000100 /* Cintiqs and other display
+					      tablets */
+#define WCM_TPC			(0x00000200 | WCM_LCD) /* TabletPC (special
+							  button handling,
+							  always an LCD) */
+#define TabletHasFeature(common, feature) (((common)->tablet_type & (feature)) != 0)
+
 #define ABSOLUTE_FLAG		0x00000100
 #define KEEP_SHAPE_FLAG		0x00000200
 #define BAUD_19200_FLAG		0x00000400
 #define BUTTONS_ONLY_FLAG	0x00000800
-#define TPCBUTTONS_FLAG		0x00001000
-#define TPCBUTTONONE_FLAG	0x00002000
-#define COREEVENT_FLAG		0x00004000
 
 #define IsCursor(priv) (DEVICE_ID((priv)->flags) == CURSOR_ID)
 #define IsStylus(priv) (DEVICE_ID((priv)->flags) == STYLUS_ID)
 #define IsTouch(priv)  (DEVICE_ID((priv)->flags) == TOUCH_ID)
 #define IsEraser(priv) (DEVICE_ID((priv)->flags) == ERASER_ID)
 #define IsPad(priv)    (DEVICE_ID((priv)->flags) == PAD_ID)
+
+#define IsUSBDevice(common) ((common)->wcmDevCls == &gWacomUSBDevice)
 
 #define FILTER_PRESSURE_RES	2048	/* maximum points in pressure curve */
 #define WCM_MAX_BUTTONS		32	/* maximum number of tablet buttons */
@@ -133,8 +195,6 @@ struct _WacomModel
 					 * tablet buttons besides the strips are
 					 * treated as buttons */
 /* get/set/property */
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 3
-
 typedef struct _PROPINFO PROPINFO;
 
 struct _PROPINFO
@@ -146,67 +206,61 @@ struct _PROPINFO
 	int nSize;
 	int nDefault;
 };
-#endif /* GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 3 */
 
 struct _WacomDeviceRec
 {
-	char *name;		/* Do not move, same offset as common->wcmDevice */
+	char *name;		/* Do not move, same offset as common->wcmDevice. Used by DBG macro */
 	/* configuration fields */
 	struct _WacomDeviceRec *next;
-	LocalDevicePtr local;
+	InputInfoPtr pInfo;
 	int debugLevel;
 
 	unsigned int flags;	/* various flags (type, abs, touch...) */
-	int topX;		/* X top */
-	int topY;		/* Y top */
-	int bottomX;		/* X bottom */
-	int bottomY;		/* Y bottom */
+	int topX;		/* X top in device coordinates */
+	int topY;		/* Y top in device coordinates */
+	int bottomX;		/* X bottom in device coordinates */
+	int bottomY;		/* Y bottom in device coordinates */
 	int resolX;             /* X resolution */
 	int resolY;             /* Y resolution */
-	int maxX;	        /* tool logical maxX */
-	int maxY;	        /* tool logical maxY */
-	int sizeX;		/* active X size */
-	int sizeY;		/* active Y size */
+	int maxX;	        /* tool physical maxX in device coordinates*/
+	int maxY;	        /* tool physical maxY in device coordinates*/
 	double factorX;		/* X factor */
 	double factorY;		/* Y factor */
 	unsigned int serial;	/* device serial number */
-	int screen_no;		/* associated screen */
-	int screenTopX[32];	/* left cordinate of the associated screen */
-	int screenTopY[32];	/* top cordinate of the associated screen */
-	int screenBottomX[32];	/* right cordinate of the associated screen */
-	int screenBottomY[32];	/* bottom cordinate of the associated screen */
-	int maxWidth;		/* max active screen width */
-	int maxHeight;		/* max active screen height */
-	int leftPadding;	/* left padding for virtual tablet */
-	int topPadding;		/* top padding for virtual tablet */
-	int button[WCM_MAX_BUTTONS];/* buttons assignments */
-	unsigned keys[WCM_MAX_BUTTONS][256]; /* keystrokes assigned to buttons */
+	int maxWidth;		/* max active screen width in screen coords */
+	int maxHeight;		/* max active screen height in screen coords */
+	int leftPadding;	/* left padding for virtual tablet in device coordinates*/
+	int topPadding;		/* top padding for virtual tablet in device coordinates*/
+	/*  map zero based internal buttons to one based X buttons */
+	int button[WCM_MAX_BUTTONS];
+	/* map one based X buttons to keystrokes */
+	unsigned keys[WCM_MAX_BUTTONS+1][256];
 	int relup;
-	unsigned rupk[256];     /* keystrokes assigned to relative wheel up event (default is button 4) */
 	int reldn;
-	unsigned rdnk[256];     /* keystrokes assigned to relative wheel down event (default is button 5) */
 	int wheelup;
-	unsigned wupk[256];     /* keystrokes assigned to absolute wheel/throttle up event (default is button 4) */
 	int wheeldn;
-	unsigned wdnk[256];     /* keystrokes assigned to absolute wheel/throttle down event (default is button 5) */
+	/* keystrokes assigned to wheel events (default is the buttons above).
+	 * Order is relup, reldwn, wheelup, wheeldn. */
+	unsigned wheel_keys[4][256];
+
 	int striplup;
-	unsigned slupk[256];    /* keystrokes assigned to left strip up event (default is button 4) */
 	int stripldn;
-	unsigned sldnk[256];    /* keystrokes assigned to left strip up event (default is button 5) */
 	int striprup;
-	unsigned srupk[256];    /* keystrokes assigned to right strip up event (default is button 4) */
 	int striprdn;
- 	unsigned srdnk[256];    /* keystrokes assigned to right strip up event (default is button 4) */
+	/* keystrokes assigned to strip events (default is the buttons above).
+	 * Order is striplup, stripldn, striprup, striprdn. */
+	unsigned strip_keys[4][256];
 	int nbuttons;           /* number of buttons for this subdevice */
 	int naxes;              /* number of axes */
+				/* FIXME: always 6, and the code relies on that... */
 
 	WacomCommonPtr common;  /* common info pointer */
 
-	/* state fields */
+	/* state fields in device coordinates */
 	int currentX;           /* current X position */
 	int currentY;           /* current Y position */
-	int currentSX;          /* current screen X position */
-	int currentSY;          /* current screen Y position */
+	int currentSX;          /* current screen X position in screen coords */
+	int currentSY;          /* current screen Y position in screen coords */
 	int oldX;               /* previous X position */
 	int oldY;               /* previous Y position */
 	int oldZ;               /* previous pressure */
@@ -220,19 +274,10 @@ struct _WacomDeviceRec
 	int oldThrottle;        /* previous throttle value */
 	int oldButtons;         /* previous buttons state */
 	int oldProximity;       /* previous proximity */
-	int hardProx;       	/* previous hardware proximity */
+	int oldHwProx;		/* previous hardware proximity */
 	int old_device_id;	/* last in prox device id */
 	int old_serial;		/* last in prox tool serial number */
 	int devReverseCount;	/* Relative ReverseConvert called twice each movement*/
-	int numScreen;          /* number of configured screens */
-	int currentScreen;      /* current screen in display */
-	int twinview;	        /* using twinview mode of gfx card */
-	int tvoffsetX;		/* X edge offset for TwinView setup */
-	int tvoffsetY;		/* Y edge offset for TwinView setup */
-	int tvResolution[4];	/* twinview screens' resultion */
-	int wcmMMonitor;        /* disable/enable moving across screens in multi-monitor desktop */
-	int wcmDevOpenCount;    /* Device open count */
-	int wcmInitKeyClassCount;    /* Device InitKeyClassDeviceStruct count */
 
 	/* JEJ - throttle */
 	int throttleStart;      /* time in ticks for last wheel movement */
@@ -240,7 +285,7 @@ struct _WacomDeviceRec
 	int throttleValue;      /* current throttle value */
 
 	/* JEJ - filters */
-	int* pPressCurve;       /* pressure curve */
+	int pPressCurve[FILTER_PRESSURE_RES + 1]; /* pressure curve */
 	int nPressCtrl[4];      /* control points for curve */
 	int minPressure;	/* the minimum pressure a pen may hold */
 
@@ -248,7 +293,11 @@ struct _WacomDeviceRec
 	WacomToolAreaPtr toolarea; /* The area defined for this device */
 
 	int isParent;		/* set to 1 if the device is not auto-hotplugged */
-	Atom btn_actions[WCM_MAX_BUTTONS]; /* property handlers to listen to */
+
+	/* property handlers to listen to for action properties */
+	Atom btn_actions[WCM_MAX_BUTTONS];
+	Atom wheel_actions[4];
+	Atom strip_actions[4];
 };
 
 /******************************************************************************
@@ -260,7 +309,7 @@ struct _WacomDeviceRec
 
 struct _WacomDeviceState
 {
-	LocalDevicePtr local;
+	InputInfoPtr pInfo;
 	int device_id;		/* tool id reported from the physical device */
 	int device_type;
 	unsigned int serial_num;
@@ -290,8 +339,6 @@ struct _WacomFilterState
         int y[MAX_SAMPLES];
         int tiltx[MAX_SAMPLES];
         int tilty[MAX_SAMPLES];
-        int statex;
-        int statey;
 };
 
 struct _WacomChannel
@@ -322,12 +369,14 @@ struct _WacomChannel
 
 struct _WacomDeviceClass
 {
-	Bool (*Detect)(LocalDevicePtr local); /* detect device */
-	Bool (*Init)(LocalDevicePtr local, char* id, float *version);   /* initialize device */
+	Bool (*Detect)(InputInfoPtr pInfo); /* detect device */
+	Bool (*ParseOptions)(InputInfoPtr pInfo); /* parse class-specific options */
+	Bool (*Init)(InputInfoPtr pInfo, char* id, float *version);   /* initialize device */
+	int  (*ProbeKeys)(InputInfoPtr pInfo); /* set the bits for the keys supported */
 };
 
-	extern WacomDeviceClass gWacomUSBDevice;
-	extern WacomDeviceClass gWacomISDV4Device;
+extern WacomDeviceClass gWacomUSBDevice;
+extern WacomDeviceClass gWacomISDV4Device;
 
 /******************************************************************************
  * WacomCommonRec
@@ -336,25 +385,37 @@ struct _WacomDeviceClass
 #define TILT_REQUEST_FLAG       1
 #define TILT_ENABLED_FLAG       2
 #define RAW_FILTERING_FLAG      4
-/* set if the /dev/input driver should wait for SYN_REPORT events as the
- * end of record indicator or not 
-*/
-#define USE_SYN_REPORTS_FLAG	8
-#define AUTODEV_FLAG		16
 
-#define DEVICE_ISDV4 		0x000C
-
-#define MAX_CHANNELS 2
+#define MAX_CHANNELS 3
+#define PAD_CHANNEL (MAX_CHANNELS-1)
 #define MAX_FINGERS  2
+
+typedef struct {
+	int wcmZoomDistance;	       /* minimum distance for a zoom touch gesture */
+	int wcmZoomDistanceDefault;    /* default minimum distance for a zoom touch gesture */
+	int wcmScrollDistance;	       /* minimum motion before sending a scroll gesture */
+	int wcmScrollDirection;	       /* store the vertical or horizontal bit in use */
+	int wcmScrollDistanceDefault;  /* default minimum motion before sending a scroll gesture */
+	int wcmGestureUsed;	       /* retain used gesture count within one in-prox event */
+	int wcmTapTime;	   	       /* minimum time between taps for a right click */
+	int wcmTapTimeDefault;         /* default minimum time between taps for a right click */
+} WacomGesturesParameters;
+
+enum WacomProtocol {
+	WCM_PROTOCOL_GENERIC,
+	WCM_PROTOCOL_4,
+	WCM_PROTOCOL_5
+};
 
 struct _WacomCommonRec 
 {
-	/* Do not move wcmDevice, same offset as priv->name */
-	char* wcmDevice;             /* device file name */
+	/* Do not move device_path, same offset as priv->name. Used by DBG macro */
+	char* device_path;           /* device file name */
 	dev_t min_maj;               /* minor/major number */
 	unsigned char wcmFlags;     /* various flags (handle tilt) */
 	int debugLevel;
 	int tablet_id;		     /* USB tablet ID */
+	int tablet_type;	     /* type (penabled/1FGT/2FGT, etc) of the tablet */
 	int fd;                      /* file descriptor to tablet */
 	int fd_refs;                 /* number of references to fd; if =0, fd is invalid */
 	unsigned long wcmKeys[NBITS(KEY_MAX)]; /* supported tool types for the device */
@@ -365,10 +426,10 @@ struct _WacomCommonRec
 	int wcmMaxZ;                 /* tablet max Z value */
 	int wcmMaxTouchX;            /* touch panel max X value */
 	int wcmMaxTouchY;            /* touch panel max Y value */
-	int wcmResolX;		     /* pen tool X resolution in points/inch */
-	int wcmResolY;		     /* pen tool Y resolution in points/inch */
-	int wcmTouchResolX;	     /* touch X resolution in points/mm */
-	int wcmTouchResolY;	     /* touch Y resolution in points/mm */
+	int wcmResolX;		     /* pen tool X resolution in points/m */
+	int wcmResolY;		     /* pen tool Y resolution in points/m */
+	int wcmTouchResolX;	     /* touch X resolution in points/m */
+	int wcmTouchResolY;	     /* touch Y resolution in points/m */
 	                             /* tablet Z resolution is equivalent
 	                              * to wcmMaxZ which is equal to 100% pressure */
 	int wcmMaxCapacity;	     /* max capacity value */
@@ -385,47 +446,45 @@ struct _WacomCommonRec
 
 	WacomDevicePtr wcmDevices;   /* list of devices sharing same port */
 	int wcmPktLength;            /* length of a packet */
-	int wcmProtocolLevel;        /* 4 for Wacom IV, 5 for Wacom V */
+	int wcmProtocolLevel;        /* Wacom Protocol used */
 	float wcmVersion;            /* ROM version */
-	int wcmForceDevice;          /* force device type (used by ISD V4) */
 	int wcmRotate;               /* rotate screen (for TabletPC) */
 	int wcmThreshold;            /* Threshold for button pressure */
 	WacomChannel wcmChannel[MAX_CHANNELS]; /* channel device state */
-	unsigned int wcmISDV4Speed;  /* serial ISDV4 link speed */
 
 	WacomDeviceClassPtr wcmDevCls; /* device class functions */
 	WacomModelPtr wcmModel;        /* model-specific functions */
 	int wcmTPCButton;	     /* set Tablet PC button on/off */
 	int wcmTouch;	             /* disable/enable touch event */
-	int wcmTPCButtonDefault;     /* Tablet PC button default */
 	int wcmTouchDefault;	     /* default to disable when not supported */
 	int wcmGesture;	     	     /* disable/enable touch gesture */
 	int wcmGestureDefault;       /* default touch gesture to disable when not supported */
 	int wcmGestureMode;	       /* data is in Gesture Mode? */
+	int wcmTouchpadMode;           /* in touchpad mode? */
 	WacomDeviceState wcmGestureState[MAX_FINGERS]; /* inital state when in gesture mode */
 	int wcmCapacity;	     /* disable/enable capacity */
 	int wcmCapacityDefault;      /* default to -1 when capacity isn't supported/disabled */
 				     /* 3 when capacity is supported */
+	WacomGesturesParameters wcmGestureParameters;
 	int wcmMaxCursorDist;	     /* Max mouse distance reported so far */
 	int wcmCursorProxoutDist;    /* Max mouse distance for proxy-out max/256 units */
 	int wcmCursorProxoutDistDefault; /* Default max mouse distance for proxy-out */
 	int wcmSuppress;        	 /* transmit position on delta > supress */
 	int wcmRawSample;	     /* Number of raw data used to filter an event */
-	int wcmScaling;		     /* dealing with missing calling DevConvert case. Default 0 */
 
 	int bufpos;                        /* position with buffer */
 	unsigned char buffer[BUFFER_SIZE]; /* data read from device */
 
-	int wcmLastToolSerial;
-	int wcmEventCnt;
-	struct input_event wcmEvents[MAX_USB_EVENTS];  /* events for current change */
+	void *private;		     /* backend-specific information */
 
 	WacomToolPtr wcmTool; /* List of unique tools */
+
+	/* DO NOT TOUCH THIS. use wcmRefCommon() instead */
+	int refcnt;			/* number of devices sharing this struct */
 };
 
 #define HANDLE_TILT(comm) ((comm)->wcmFlags & TILT_ENABLED_FLAG)
 #define RAW_FILTERING(comm) ((comm)->wcmFlags & RAW_FILTERING_FLAG)
-#define USE_SYN_REPORTS(comm) ((comm)->wcmFlags & USE_SYN_REPORTS_FLAG)
 
 /******************************************************************************
  * WacomTool
@@ -453,7 +512,9 @@ struct _WacomToolArea
 	int bottomX; /* Bottom X/Y */
 	int bottomY;
 
-	LocalDevicePtr device; /* The InputDevice connected to this area */
+	InputInfoPtr device; /* The InputDevice connected to this area */
 };
 
 #endif /*__XF86_XF86WACOMDEFS_H */
+
+/* vim: set noexpandtab tabstop=8 shiftwidth=8: */

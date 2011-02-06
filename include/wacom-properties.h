@@ -36,19 +36,25 @@
 /* 32 bit, 4 values, tablet id, old serial, old device id, serial */
 #define WACOM_PROP_SERIALIDS "Wacom Serial IDs"
 
-/* 8 bit, 4 values, left up, left down, right up, right down */
+/* 8 bit, 4 values, left up, left down, right up, right down
+   OR
+   Atom, 4 values , left up, left down, right up, right down
+  */
 #define WACOM_PROP_STRIPBUTTONS "Wacom Strip Buttons"
 
-/* 8 bit, 4 values, up, down, wheel up, wheel down */
+/* 8 bit, 4 values, up, down, wheel up, wheel down
+   OR
+   Atom, 4 values , up, down, wheel up, wheel down
+ */
 #define WACOM_PROP_WHEELBUTTONS "Wacom Wheel Buttons"
 
 /* 32 bit, 4 values */
 #define WACOM_PROP_TWINVIEW_RES "Wacom TwinView Resolution"
 
-/* 8 bit 3 values, screen number, twinview on/off, multimonitor */
+/* DEPRECATED. DO NOT USE */
 #define WACOM_PROP_DISPLAY_OPTS "Wacom Display Options"
 
-/* 32 bit, 4 values, top x, top y, bottom x, bottom y */
+/* DEPRECATED. DO NOT USE */
 #define WACOM_PROP_SCREENAREA "Wacom Screen Area"
 
 /* 32 bit, 1 value */
@@ -65,6 +71,12 @@
 
 /* BOOL, 1 value */
 #define WACOM_PROP_TOUCH "Wacom Enable Touch"
+
+/* 8 bit, 1 values */
+#define WACOM_PROP_ENABLE_GESTURE "Wacom Enable Touch Gesture"
+
+/* 32 bit, 3 values, zoom, rotate, tap parameters */
+#define WACOM_PROP_GESTURE_PARAMETERS "Wacom Touch Gesture Parameters"
 
 /* BOOL, 1 value */
 #define WACOM_PROP_HOVER "Wacom Hover Click"
@@ -83,5 +95,16 @@
  * given. No client may rely on this property being present or working.
  */
 #define WACOM_PROP_DEBUGLEVELS "Wacom Debug Levels"
+
+
+/* The following are tool types used by the driver in WACOM_PROP_TOOL_TYPE
+ * or in the 'type' field for XI1 clients. Clients may check for one of
+ * these types to identify tool types.
+ */
+#define WACOM_PROP_XI_TYPE_STYLUS "STYLUS"
+#define WACOM_PROP_XI_TYPE_CURSOR "CURSOR"
+#define WACOM_PROP_XI_TYPE_ERASER "ERASER"
+#define WACOM_PROP_XI_TYPE_PAD    "PAD"
+#define WACOM_PROP_XI_TYPE_TOUCH  "TOUCH"
 
 #endif
