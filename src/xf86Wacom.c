@@ -85,105 +85,6 @@ static void wcmKbdCtrlCallback(DeviceIntPtr di, KeybdCtrl* ctrl)
 {
 }
 
-static int wcmInitArea(InputInfoPtr pInfo)
-{
-	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
-	WacomToolAreaPtr area = priv->toolarea, inlist;
-	WacomCommonPtr common = priv->common;
-	double screenRatio, tabletRatio;
-	int bottomx = priv->maxX, bottomy = priv->maxY;
-
-	DBG(10, priv, "\n");
-
-	/* verify the box and initialize the area */
-	if (priv->topX > bottomx)
-		priv->topX = 0;
-
-	if (priv->topY > bottomy)
-		priv->topY = 0;
-
-	if (priv->bottomX < priv->topX || !priv->bottomX)
-		priv->bottomX = bottomx;
-
-	if (priv->bottomY < priv->topY || !priv->bottomY)
-		priv->bottomY = bottomy;
-
-	area->topX = priv->topX;
-	area->topY = priv->topY;
-	area->bottomX = priv->bottomX;
-	area->bottomY = priv->bottomY;
-
-	/* Maintain aspect ratio to the whole desktop
-	 * May need to consider a specific screen in multimonitor settings
-	 */
-	if (priv->flags & KEEP_SHAPE_FLAG)
-	{
-
-		screenRatio = ((double)priv->maxWidth / (double)priv->maxHeight);
-		tabletRatio = ((double)(bottomx - priv->topX) /
-				(double)(bottomy - priv->topY));
-
-		DBG(2, priv, "screenRatio = %.3g, "
-			"tabletRatio = %.3g\n", screenRatio, tabletRatio);
-
-		if (screenRatio > tabletRatio)
-		{
-			area->bottomX = priv->bottomX = bottomx;
-			area->bottomY = priv->bottomY = (bottomy - priv->topY) *
-				tabletRatio / screenRatio + priv->topY;
-		}
-		else
-		{
-			area->bottomX = priv->bottomX = (bottomx - priv->topX) *
-				screenRatio / tabletRatio + priv->topX;
-			area->bottomY = priv->bottomY = bottomy;
-		}
-	}
-	/* end keep shape */ 
-
-	inlist = priv->tool->arealist;
-
-	/* The first one in the list is always valid */
-	if (area != inlist && wcmAreaListOverlap(area, inlist))
-	{
-		inlist = priv->tool->arealist;
-
-		/* remove this overlapped area from the list */
-		for (; inlist; inlist=inlist->next)
-		{
-			if (inlist->next == area)
-			{
-				inlist->next = area->next;
-				free(area);
-				priv->toolarea = NULL;
- 			break;
-			}
-		}
-
-		/* Remove this device from the common struct */
-		if (common->wcmDevices == priv)
-			common->wcmDevices = priv->next;
-		else
-		{
-			WacomDevicePtr tmp = common->wcmDevices;
-			while(tmp->next && tmp->next != priv)
-				tmp = tmp->next;
-			if(tmp)
-				tmp->next = priv->next;
-		}
-		xf86Msg(X_ERROR, "%s: Top/Bottom area overlaps with another devices.\n",
-			pInfo->name);
-		return FALSE;
-	}
-	xf86Msg(X_PROBED, "%s: top X=%d top Y=%d "
-			"bottom X=%d bottom Y=%d "
-			"resol X=%d resol Y=%d\n",
-			pInfo->name, priv->topX,
-			priv->topY, priv->bottomX, priv->bottomY,
-			priv->resolX, priv->resolY);
-	return TRUE;
-}
-
 /*****************************************************************************
  * wcmVirtualTabletPadding(InputInfoPtr pInfo)
  ****************************************************************************/
@@ -210,8 +111,6 @@ static void wcmInitialToolSize(InputInfoPtr pInfo)
 {
 	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
 	WacomCommonPtr common = priv->common;
-	WacomToolPtr toollist = common->wcmTool;
-	WacomToolAreaPtr arealist;
 
 	/* assign max and resolution here since we don't get them during
 	 * the configuration stage */
@@ -230,17 +129,10 @@ static void wcmInitialToolSize(InputInfoPtr pInfo)
 		priv->resolY = common->wcmResolY;
 	}
 
-	for (; toollist; toollist=toollist->next)
-	{
-		arealist = toollist->arealist;
-		for (; arealist; arealist=arealist->next)
-		{
-			if (!arealist->bottomX) 
-				arealist->bottomX = priv->maxX;
-			if (!arealist->bottomY)
-				arealist->bottomY = priv->maxY;
-		}
-	}
+	if (!priv->bottomX)
+		priv->bottomX = priv->maxX;
+	if (!priv->bottomY)
+		priv->bottomY = priv->maxY;
 
 	return;
 }
@@ -332,8 +224,8 @@ wcmInitAxes(DeviceIntPtr pWcm)
 	if (IsCursor(priv))
 	{
 		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_RZ);
-		min = -900;
-		max = -899;
+		min = MIN_ROTATION;
+		max = MIN_ROTATION + MAX_ROTATION_RANGE - 1;
 		min_res = max_res = res = 1;
 		mode = Absolute;
 	} else if (IsPad(priv))
@@ -442,7 +334,6 @@ static int wcmDevInit(DeviceIntPtr pWcm)
 {
 	InputInfoPtr pInfo = (InputInfoPtr)pWcm->public.devicePrivate;
 	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
-	WacomCommonPtr common = priv->common;
 	unsigned char butmap[WCM_MAX_BUTTONS+1];
 	int nbaxes, nbbuttons, nbkeys;
 	int loop;
@@ -544,23 +435,11 @@ static int wcmDevInit(DeviceIntPtr pWcm)
 	if (!IsPad(priv))
 	{
 		wcmInitialToolSize(pInfo);
-
-		if (wcmInitArea(pInfo) == FALSE)
-			return FALSE;
-
 		wcmMappingFactor(pInfo);
 	}
 
 	if (!wcmInitAxes(pWcm))
 		return FALSE;
-
-	wcmRotateTablet(pInfo, common->wcmRotate);
-
-	if (IsTouch(priv))
-	{
-		/* hard prox out */
-		priv->oldHwProx = 0;
-	}
 
 	InitWcmDeviceProperties(pInfo);
 	XIRegisterPropertyHandler(pInfo->dev, wcmSetProperty, NULL, wcmDeleteProperty);
@@ -869,6 +748,65 @@ static void wcmDevClose(InputInfoPtr pInfo)
 	}
 }
 
+static void wcmEnableDisableTool(DeviceIntPtr dev, Bool enable)
+{
+	InputInfoPtr	pInfo	= dev->public.devicePrivate;
+	WacomDevicePtr	priv	= pInfo->private;
+	WacomToolPtr	tool	= priv->tool;
+
+	tool->enabled = enable;
+}
+
+static void wcmEnableTool(DeviceIntPtr dev)
+{
+	wcmEnableDisableTool(dev, TRUE);
+}
+static void wcmDisableTool(DeviceIntPtr dev)
+{
+	wcmEnableDisableTool(dev, FALSE);
+}
+
+/**
+ * Unlink the touch tool from the pen of the same device
+ */
+static void wcmUnlinkTouchAndPen(InputInfoPtr pInfo)
+{
+	WacomDevicePtr priv = pInfo->private;
+	WacomCommonPtr common = priv->common;
+	InputInfoPtr device = xf86FirstLocalDevice();
+	WacomCommonPtr tmpcommon = NULL;
+	WacomDevicePtr tmppriv = NULL;
+	Bool touch_device = FALSE;
+
+	if (!TabletHasFeature(common, WCM_PENTOUCH))
+		return;
+
+	/* Lookup to find the associated pen and touch */
+	for (; device != NULL; device = device->next)
+	{
+		if (!strcmp(device->drv->driverName, "wacom"))
+		{
+			tmppriv = (WacomDevicePtr) device->private;
+			tmpcommon = tmppriv->common;
+			touch_device = (common->wcmTouchDevice ||
+						tmpcommon->wcmTouchDevice);
+
+			/* skip the same tool or unlinked devices */
+			if ((tmppriv == priv) || !touch_device)
+				continue;
+
+			if (tmpcommon->tablet_id == common->tablet_id)
+			{
+				common->wcmTouchDevice = NULL;
+				tmpcommon->wcmTouchDevice = NULL;
+				common->tablet_type &= ~WCM_PENTOUCH;
+				tmpcommon->tablet_type &= ~WCM_PENTOUCH;
+				return;
+			}
+		}
+	}
+}
+
 /*****************************************************************************
  * wcmDevProc --
  *   Handle the initialization, etc. of a wacom tablet. Called by the server
@@ -905,12 +843,15 @@ static int wcmDevProc(DeviceIntPtr pWcm, int what)
 		case DEVICE_ON:
 			if (!wcmDevOpen(pWcm))
 				goto out;
+			wcmEnableTool(pWcm);
 			xf86AddEnabledDevice(pInfo);
 			pWcm->public.on = TRUE;
 			break;
 
 		case DEVICE_OFF:
 		case DEVICE_CLOSE:
+			wcmDisableTool(pWcm);
+			wcmUnlinkTouchAndPen(pInfo);
 			if (pInfo->fd >= 0)
 			{
 				xf86RemoveEnabledDevice(pInfo);

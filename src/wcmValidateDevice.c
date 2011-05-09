@@ -306,9 +306,12 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 /**
  * Duplicate xf86 options, replace the "type" option with the given type
  * (and the name with "$name $type" and convert them to InputOption */
-static InputOption *wcmOptionDupConvert(InputInfoPtr pInfo, const char* basename, const char *type)
+static InputOption *wcmOptionDupConvert(InputInfoPtr pInfo, const char* basename, const char *type, int iserial)
 {
+	WacomDevicePtr priv = pInfo->private;
+	WacomCommonPtr common = priv->common;
 	pointer original = pInfo->options;
+	WacomToolPtr ser = common->serials;
 	InputOption *iopts = NULL, *new;
 	char *name;
 	pointer options;
@@ -325,13 +328,28 @@ static InputOption *wcmOptionDupConvert(InputInfoPtr pInfo, const char* basename
 		options = dummy.options;
 	}
 #endif
+	if (iserial > -1)
+	{
+		while (ser->serial && ser->serial != iserial)
+			ser = ser->next;
 
-	rc = asprintf(&name, "%s %s", basename, type);
+		if (strlen(ser->name) > 0)
+			rc = asprintf(&name, "%s %s %s", basename, ser->name, type);
+		else
+			rc = asprintf(&name, "%s %d %s", basename, ser->serial, type);
+	}
+	else
+		rc = asprintf(&name, "%s %s", basename, type);
+
 	if (rc == -1) /* if asprintf fails, strdup will probably too... */
 		name = strdup("unknown");
 
 	options = xf86ReplaceStrOption(options, "Type", type);
 	options = xf86ReplaceStrOption(options, "Name", name);
+
+	if (iserial > -1)
+		options = xf86ReplaceIntOption(options, "Serial", ser->serial);
+
 	free(name);
 
 	while(options)
@@ -380,35 +398,104 @@ static InputAttributes* wcmDuplicateAttributes(InputInfoPtr pInfo,
 #endif
 
 /**
- * Hotplug one device of the given type.
+ * This struct contains the necessary info for hotplugging a device later.
+ * Memory must be freed after use.
+ */
+typedef struct {
+	InputOption *input_options;
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 9
+	InputAttributes *attrs;
+#endif
+} WacomHotplugInfo;
+
+/**
+ * Actually hotplug the device. This function is called by the server when
+ * the WorkProcs are processed.
+ *
+ * @param client The server client. unused
+ * @param closure A pointer to a struct WcmHotplugInfo containing the
+ * necessary information to create a new device.
+ * @return TRUE to remove this function from the server's work queue.
+ */
+static Bool
+wcmHotplugDevice(ClientPtr client, pointer closure )
+{
+	WacomHotplugInfo *hotplug_info = closure;
+	DeviceIntPtr dev; /* dummy */
+
+	NewInputDeviceRequest(hotplug_info->input_options,
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 9
+			      hotplug_info->attrs,
+#endif
+			      &dev);
+	wcmFreeInputOpts(hotplug_info->input_options);
+
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 11
+	FreeInputAttributes(hotplug_info->attrs);
+#endif
+	free(hotplug_info);
+
+	return TRUE;
+}
+
+/**
+ * Queue the hotplug for one tool/device of the given type.
  * Device has the same options as the "parent" device, type is one of
  * erasor, stylus, pad, touch, cursor, etc.
  * Name of the new device is set automatically to "<device name> <type>".
+ *
+ * Note that we don't actually hotplug the device here. We store the
+ * information needed to hotplug the device later and then queue the
+ * hotplug. The server will come back and call the @wcmHotplugDevice
+ * later.
+ *
+ * @param pInfo The parent device
+ * @param basename The base name for the device (type will be appended)
+ * @param type Type name for this tool
  */
-static void wcmHotplug(InputInfoPtr pInfo, const char* basename, const char *type)
+static void wcmQueueHotplug(InputInfoPtr pInfo, const char* basename, const char *type, int iserial)
 {
-	DeviceIntPtr dev; /* dummy */
-	InputOption *input_options;
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 9
-	InputAttributes *attrs = NULL;
-#endif
+	WacomHotplugInfo *hotplug_info;
 
-	input_options = wcmOptionDupConvert(pInfo, basename, type);
+	hotplug_info = calloc(1, sizeof(WacomHotplugInfo));
 
+	if (!hotplug_info)
+	{
+		xf86Msg(X_ERROR, "%s: OOM, cannot hotplug dependent devices\n", pInfo->name);
+		return;
+	}
+
+	hotplug_info->input_options = wcmOptionDupConvert(pInfo, basename, type, iserial);
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 11
-	attrs = wcmDuplicateAttributes(pInfo, type);
+	hotplug_info->attrs = wcmDuplicateAttributes(pInfo, type);
 #endif
+	QueueWorkProc(wcmHotplugDevice, serverClient, hotplug_info);
+}
 
-	NewInputDeviceRequest(input_options,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 9
-				attrs,
-#endif
-				&dev);
-	wcmFreeInputOpts(input_options);
+void wcmHotplugSerials(InputInfoPtr pInfo, const char *basename)
+{
+	WacomDevicePtr  priv = (WacomDevicePtr)pInfo->private;
+	WacomCommonPtr  common = priv->common;
+	WacomToolPtr    ser = common->serials;
 
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 11
-	FreeInputAttributes(attrs);
-#endif
+	while (ser)
+	{
+		xf86Msg(X_INFO, "%s: hotplugging serial %d.\n", pInfo->name, ser->serial);
+
+		if (wcmIsAValidType(pInfo, "stylus") &&
+		    (ser->typeid & STYLUS_ID))
+			wcmQueueHotplug(pInfo, basename, "stylus", ser->serial);
+
+		if (wcmIsAValidType(pInfo, "eraser") &&
+		    (ser->typeid & ERASER_ID))
+			wcmQueueHotplug(pInfo, basename, "eraser", ser->serial);
+
+		if (wcmIsAValidType(pInfo, "cursor") &&
+		    (ser->typeid & CURSOR_ID))
+			wcmQueueHotplug(pInfo, basename, "cursor", ser->serial);
+
+		ser = ser->next;
+	}
 }
 
 void wcmHotplugOthers(InputInfoPtr pInfo, const char *basename)
@@ -427,9 +514,12 @@ void wcmHotplugOthers(InputInfoPtr pInfo, const char *basename)
 			if (skip)
 				skip = 0;
 			else
-				wcmHotplug(pInfo, basename, wcmType[i].type);
+				wcmQueueHotplug(pInfo, basename, wcmType[i].type, -1);
 		}
 	}
+
+	wcmHotplugSerials(pInfo, basename);
+
         xf86Msg(X_INFO, "%s: hotplugging completed.\n", pInfo->name);
 }
 
@@ -470,20 +560,113 @@ int wcmNeedAutoHotplug(InputInfoPtr pInfo, const char **type)
 	xf86Msg(X_INFO, "%s: type not specified, assuming '%s'.\n", pInfo->name, *type);
 	xf86Msg(X_INFO, "%s: other types will be automatically added.\n", pInfo->name);
 
+	/* Note: wcmIsHotpluggedDevice() relies on this */
 	pInfo->options = xf86AddNewOption(pInfo->options, "Type", *type);
 	pInfo->options = xf86ReplaceStrOption(pInfo->options, "_source", "_driver/wacom");
 
 	return 1;
 }
 
-int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
+int wcmParseSerials (InputInfoPtr pInfo)
+{
+	WacomDevicePtr  priv = (WacomDevicePtr)pInfo->private;
+	WacomCommonPtr  common = priv->common;
+	char            *s;
+
+	if (common->serials)
+	{
+		return 0; /*Parse has been already done*/
+	}
+
+	s = xf86SetStrOption(pInfo->options, "ToolSerials", NULL);
+	if (s) /*Dont parse again, if the commons have values already*/
+	{
+		char* tok = strtok(s, ";");
+		while (tok != NULL)
+		{
+			int serial, nmatch;
+			char type[strlen(tok) + 1];
+			char name[strlen(tok) + 1];
+			WacomToolPtr ser = calloc(1, sizeof(WacomTool));
+
+			if (ser == NULL)
+				return 1;
+
+			nmatch = sscanf(tok,"%d,%[a-z],%[A-Za-z ]",&serial, type, name);
+
+			if (nmatch < 1)
+			{
+				xf86Msg(X_ERROR, "%s: %s is invalid serial string.\n",
+					pInfo->name, tok);
+				return 1;
+			}
+
+			if (nmatch >= 1)
+			{
+				xf86Msg(X_CONFIG, "%s: Tool serial %d found.\n",
+					pInfo->name, serial);
+
+				ser->serial = serial;
+
+				ser->typeid = STYLUS_ID | ERASER_ID; /*Default to both tools*/
+			}
+
+			if (nmatch >= 2)
+			{
+				xf86Msg(X_CONFIG, "%s: Tool %d has type %s.\n",
+					pInfo->name, serial, type);
+				if ((strcmp(type, "pen") == 0) || (strcmp(type, "airbrush") == 0))
+					ser->typeid = STYLUS_ID | ERASER_ID;
+				else if (strcmp(type, "artpen") == 0)
+					ser->typeid = STYLUS_ID;
+				else if (strcmp(type, "cursor") == 0)
+					ser->typeid = CURSOR_ID;
+				else    xf86Msg(X_CONFIG, "%s: Invalid type %s, defaulting to pen.\n",
+					pInfo->name, type);
+			}
+
+			if (nmatch == 3)
+			{
+				xf86Msg(X_CONFIG, "%s: Tool %d is named %s.\n",
+					pInfo->name, serial, name);
+				ser->name = strdup(name);
+			}
+			else ser->name = ""; /*no name yet*/
+
+			if (common->serials == NULL)
+				common->serials = ser;
+			else
+			{
+				WacomToolPtr tool = common->serials;
+				while (tool->next)
+					tool = tool->next;
+				tool->next = ser;
+			}
+
+			tok = strtok(NULL,";");
+		}
+	}
+	return 0;
+}
+
+/**
+ * Parse the options for this device.
+ * Note that parameters is_primary and is_dependent are mutually exclusive,
+ * though both may be false in the case of an xorg.conf device.
+ *
+ * @param is_primary True if the device is the parent device for
+ * hotplugging, False if the device is a depent or xorg.conf device.
+ * @param is_hotplugged True if the device is a dependent device, FALSE
+ * otherwise.
+ * @retvalue True on success or False otherwise.
+ */
+Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 {
 	WacomDevicePtr  priv = (WacomDevicePtr)pInfo->private;
 	WacomCommonPtr  common = priv->common;
 	char            *s, b[12];
 	int		i;
 	WacomToolPtr    tool = NULL;
-	WacomToolAreaPtr area = NULL;
 	int		tpc_button_is_on;
 
 	/* Optional configuration */
@@ -524,18 +707,35 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 
 	if (s)
 	{
+		int rotation;
+
 		if (xf86NameCmp(s, "CW") == 0)
-			common->wcmRotate=ROTATE_CW;
+			rotation = ROTATE_CW;
 		else if (xf86NameCmp(s, "CCW") ==0)
-			common->wcmRotate=ROTATE_CCW;
+			rotation = ROTATE_CCW;
 		else if (xf86NameCmp(s, "HALF") ==0)
-			common->wcmRotate=ROTATE_HALF;
+			rotation = ROTATE_HALF;
 		else if (xf86NameCmp(s, "NONE") !=0)
 		{
 			xf86Msg(X_ERROR, "%s: invalid Rotate option '%s'.\n",
 				pInfo->name, s);
 			goto error;
 		}
+
+		if (is_dependent && rotation != common->wcmRotate)
+			xf86Msg(X_INFO, "%s: ignoring rotation of dependent"
+					" device\n", pInfo->name);
+		else
+			wcmRotateTablet(pInfo, rotation);
+	}
+
+	common->wcmRawSample = xf86SetIntOption(pInfo->options, "RawSample",
+			common->wcmRawSample);
+	if (common->wcmRawSample < 1 || common->wcmRawSample > MAX_SAMPLES)
+	{
+		xf86Msg(X_ERROR, "%s: RawSample setting '%d' out of range [1..%d]. Using default.\n",
+			pInfo->name, common->wcmRawSample, MAX_SAMPLES);
+		common->wcmRawSample = DEFAULT_SAMPLES;
 	}
 
 	common->wcmSuppress = xf86SetIntOption(pInfo->options, "Suppress",
@@ -551,10 +751,6 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 	if (xf86SetBoolOption(pInfo->options, "Tilt",
 			(common->wcmFlags & TILT_REQUEST_FLAG)))
 		common->wcmFlags |= TILT_REQUEST_FLAG;
-
-	if (xf86SetBoolOption(pInfo->options, "RawFilter",
-			(common->wcmFlags & RAW_FILTERING_FLAG)))
-		common->wcmFlags |= RAW_FILTERING_FLAG;
 
 	/* pressure curve takes control points x1,y1,x2,y2
 	 * values in range from 0..100.
@@ -574,16 +770,18 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 			wcmSetPressureCurve(priv,a,b,c,d);
 	}
 
+	/*Serials of tools we want hotpluged*/
+	if (wcmParseSerials (pInfo) != 0)
+		goto error;
+
 	if (IsCursor(priv))
 	{
 		common->wcmCursorProxoutDist = xf86SetIntOption(pInfo->options, "CursorProx", 0);
-		if (common->wcmCursorProxoutDist < 0 || common->wcmCursorProxoutDist > 255)
+		if (common->wcmCursorProxoutDist < 0 ||
+				common->wcmCursorProxoutDist > common->wcmMaxDist)
 			xf86Msg(X_CONFIG, "%s: CursorProx invalid %d \n",
 				pInfo->name, common->wcmCursorProxoutDist);
 	}
-
-	if (xf86SetBoolOption(pInfo->options, "KeepShape", 0))
-		priv->flags |= KEEP_SHAPE_FLAG;
 
 	priv->topX = xf86SetIntOption(pInfo->options, "TopX", 0);
 	priv->topY = xf86SetIntOption(pInfo->options, "TopY", 0);
@@ -592,11 +790,6 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 	priv->serial = xf86SetIntOption(pInfo->options, "Serial", 0);
 
 	tool = priv->tool;
-	area = priv->toolarea;
-	area->topX = priv->topX;
-	area->topY = priv->topY;
-	area->bottomX = priv->bottomX;
-	area->bottomY = priv->bottomY;
 	tool->serial = priv->serial;
 
 	/* The first device doesn't need to add any tools/areas as it
@@ -612,18 +805,10 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 
 		if(toollist) /* Already have a tool with the same type/serial */
 		{
-			WacomToolAreaPtr arealist;
-
-			free(tool);
-			priv->tool = tool = toollist;
-			arealist = toollist->arealist;
-
-			/* Add the area to the end of the list */
-			while(arealist->next)
-				arealist = arealist->next;
-			arealist->next = area;
-		}
-		else /* No match on existing tool/serial, add tool to the end of the list */
+			xf86Msg(X_ERROR, "%s: already have a tool with type/serial %d/%d.",
+					pInfo->name, tool->typeid, tool->serial);
+			goto error;
+		} else /* No match on existing tool/serial, add tool to the end of the list */
 		{
 			toollist = common->wcmTool;
 			while(toollist->next)
@@ -644,7 +829,7 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 	tpc_button_is_on = xf86SetBoolOption(pInfo->options, "TPCButton",
 					TabletHasFeature(common, WCM_TPC));
 
-	if (hotplugged || IsStylus(priv))
+	if (is_primary || IsStylus(priv))
 		common->wcmTPCButton = tpc_button_is_on;
 	else if (tpc_button_is_on != common->wcmTPCButton)
 		xf86Msg(X_WARNING, "%s: TPCButton option can only be set "
@@ -663,7 +848,7 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 		touch_is_on = xf86SetBoolOption(pInfo->options, "Touch",
 						common->wcmTouchDefault);
 
-		if (hotplugged || IsTouch(priv))
+		if (is_primary || IsTouch(priv))
 			common->wcmTouch = touch_is_on;
 		else if (touch_is_on != common->wcmTouch)
 			xf86Msg(X_WARNING, "%s: Touch option can only be set "
@@ -672,7 +857,7 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 		capacity_is_on = xf86SetBoolOption(pInfo->options, "Capacity",
 						   common->wcmCapacityDefault);
 
-		if (hotplugged || IsTouch(priv))
+		if (is_primary || IsTouch(priv))
 			common->wcmCapacity = capacity_is_on;
 		else if (capacity_is_on != common->wcmCapacity)
 			xf86Msg(X_WARNING, "%s: Touch Capacity option can only be"
@@ -691,19 +876,11 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 		gesture_is_on = xf86SetBoolOption(pInfo->options, "Gesture",
 					    common->wcmGestureDefault);
 
-		if (hotplugged || IsTouch(priv))
+		if (is_primary || IsTouch(priv))
 			common->wcmGesture = gesture_is_on;
 		else if (gesture_is_on != common->wcmGesture)
 			xf86Msg(X_WARNING, "%s: Touch gesture option can only "
 				"be set by a touch tool.\n", pInfo->name);
-
-		/* FIXME: wtf is this here?? */
-		if (IsUSBDevice(common) &&
-				TabletHasFeature(common, WCM_LCD) &&
-				TabletHasFeature(common, WCM_2FGT)) {
-			common->wcmGestureParameters.wcmZoomDistanceDefault = 30;
-			common->wcmGestureParameters.wcmScrollDistanceDefault = 30;
-		}
 
 		common->wcmGestureParameters.wcmZoomDistance =
 			xf86SetIntOption(pInfo->options, "ZoomDistance",
@@ -736,11 +913,10 @@ int wcmParseOptions(InputInfoPtr pInfo, int hotplugged)
 	    !common->wcmDevCls->ParseOptions(pInfo))
 		goto error;
 
-	return 1;
+	return TRUE;
 error:
-	free(area);
 	free(tool);
-	return 0;
+	return FALSE;
 }
 
 /* vim: set noexpandtab tabstop=8 shiftwidth=8: */

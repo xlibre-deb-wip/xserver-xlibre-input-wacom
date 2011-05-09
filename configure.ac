@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-wacom],
-        [0.10.10],
+        [0.11.0],
         [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg],
         [xf86-input-wacom])
 AC_CONFIG_MACRO_DIR([m4])
@@ -44,6 +44,7 @@ m4_ifndef([XORG_MACROS_VERSION],
           [m4_fatal([must install xorg-macros 1.8 or later before running autoconf/autogen])])
 XORG_MACROS_VERSION([1.8])
 XORG_DEFAULT_OPTIONS
+XORG_WITH_DOXYGEN(1.6.1)
 
 # Checks for libraries.
 AC_CHECK_LIB([m], [rint])
@@ -53,6 +54,9 @@ PKG_CHECK_MODULES(XORG, [xorg-server >= 1.7.0] xproto xext kbproto inputproto ra
 
 # Obtain compiler/linker options for the xsetwacom tool
 PKG_CHECK_MODULES(X11, x11 xi xrandr)
+
+# Obtain compiler/linker options for libudev used by ISDV4 code
+PKG_CHECK_MODULES(UDEV, libudev)
 
 # X Server SDK location is required to install wacom header files
 # This location is also relayed in the xorg-wacom.pc file
@@ -98,13 +102,60 @@ AC_ARG_WITH([xorg-conf-dir],
             [configdir="$sysconfigdir"])
 AC_SUBST(configdir)
 AM_CONDITIONAL(HAS_XORG_CONF_DIR, [test "x$sysconfigdir" != "x"])
+
+AC_ARG_ENABLE(unit-tests, AS_HELP_STRING([--enable-unit-tests],
+                          [Enable unit-tests (default: auto)]),
+                          [UNITTESTS=$enableval],
+                          [UNITTESTS=auto])
+
+# If unittests aren't explicitly disabled, check for required support
+if test "x$UNITTESTS" != xno ; then
+       # Check if linker supports -wrap, passed via compiler flags
+       # When cross-compiling, reports no, since unit tests run from
+       # "make check", so would be running on build machine,  not target
+       AC_MSG_CHECKING([whether the linker supports -wrap])
+       save_LDFLAGS="$LDFLAGS"
+       LDFLAGS="$LDFLAGS -Wl,-wrap,exit"
+       AC_RUN_IFELSE([AC_LANG_PROGRAM([[
+        void __wrap_exit (int s)
+        {
+            __real_exit (0);
+        }]],
+        [[exit (1);]])],
+                     [linker_can_wrap="yes"],
+                     [linker_can_wrap="no"],
+                     [linker_can_wrap="no"])
+       AC_MSG_RESULT([$linker_can_wrap])
+       LDFLAGS="$save_LDFLAGS"
+fi
+
+if test "x$UNITTESTS" = xauto; then
+       if test "x$linker_can_wrap" = xyes; then
+           UNITTESTS=yes
+       else
+           UNITTESTS=no
+       fi
+fi
+if test "x$UNITTESTS" = xyes; then
+       if test "x$linker_can_wrap" = xno; then
+           AC_MSG_ERROR([ld -wrap support required to build unit tests])
+       fi
+       AC_DEFINE(UNITTESTS, 1, [Enable unit tests])
+fi
+AM_CONDITIONAL(UNITTESTS, [test "x$UNITTESTS" = xyes])
+
+
+
 # -----------------------------------------------------------------------------
 
 AC_CONFIG_FILES([Makefile
                  conf/Makefile
+                 doc/Makefile
+                 doc/doxygen.conf
                  src/Makefile
                  man/Makefile
                  include/Makefile
                  tools/Makefile
+                 test/Makefile
                  xorg-wacom.pc])
 AC_OUTPUT

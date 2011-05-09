@@ -38,7 +38,6 @@ static int wcmAllocate(InputInfoPtr pInfo)
 	WacomDevicePtr   priv   = NULL;
 	WacomCommonPtr   common = NULL;
 	WacomToolPtr     tool   = NULL;
-	WacomToolAreaPtr area   = NULL;
 	int i;
 
 	priv = calloc(1, sizeof(WacomDeviceRec));
@@ -53,10 +52,6 @@ static int wcmAllocate(InputInfoPtr pInfo)
 	if(!tool)
 		goto error;
 
-	area = calloc(1, sizeof(WacomToolArea));
-	if (!area)
-		goto error;
-
 	pInfo->device_control = gWacomModule.DevProc;
 	pInfo->read_input = gWacomModule.DevReadInput;
 	pInfo->control_proc = gWacomModule.DevChangeControl;
@@ -67,7 +62,7 @@ static int wcmAllocate(InputInfoPtr pInfo)
 	priv->next = NULL;
 	priv->pInfo = pInfo;
 	priv->common = common;       /* common info pointer */
-	priv->oldHwProx = 1;	     /* previous hardware proximity */
+	priv->oldCursorHwProx = 0;   /* previous cursor hardware proximity */
 	priv->nPressCtrl [0] = 0;    /* pressure curve x0 */
 	priv->nPressCtrl [1] = 0;    /* pressure curve y0 */
 	priv->nPressCtrl [2] = 100;  /* pressure curve x1 */
@@ -94,52 +89,18 @@ static int wcmAllocate(InputInfoPtr pInfo)
 	/* JEJ - throttle sampling code */
 	priv->throttleLimit = -1;
 
-	common->wcmFlags = RAW_FILTERING_FLAG;   /* various flags */
 	common->wcmDevices = priv;
-	common->wcmProtocolLevel = WCM_PROTOCOL_4; /* protocol level */
-	common->wcmTPCButton = 0;          /* set Tablet PC button on/off */
-	common->wcmCapacity = -1;          /* Capacity is disabled */
-	common->wcmCapacityDefault = -1;    /* default to -1 when capacity isn't supported */
-					   /* 3 when capacity is supported */
-	common->wcmGestureParameters.wcmZoomDistance = 50;
-	common->wcmGestureParameters.wcmZoomDistanceDefault = 50;
-	common->wcmGestureParameters.wcmScrollDirection = 0;
-	common->wcmGestureParameters.wcmScrollDistance = 20;
-	common->wcmGestureParameters.wcmScrollDistanceDefault = 20;
-	common->wcmGestureParameters.wcmTapTime = 250;
-	common->wcmGestureParameters.wcmTapTimeDefault = 250;
-	common->wcmRotate = ROTATE_NONE;   /* default tablet rotation to off */
-	common->wcmMaxX = 0;               /* max digitizer logical X value */
-	common->wcmMaxY = 0;               /* max digitizer logical Y value */
-	common->wcmMaxTouchX = 1024;       /* max touch X value */
-	common->wcmMaxTouchY = 1024;       /* max touch Y value */
-	common->wcmMaxStripX = 4096;       /* Max fingerstrip X */
-	common->wcmMaxStripY = 4096;       /* Max fingerstrip Y */
-	common->wcmMaxtiltX = 128;	   /* Max tilt in X directory */
-	common->wcmMaxtiltY = 128;	   /* Max tilt in Y directory */
-	common->wcmCursorProxoutDistDefault = PROXOUT_INTUOS_DISTANCE; 
-			/* default to Intuos */
-	common->wcmSuppress = DEFAULT_SUPPRESS;    
-			/* transmit position if increment is superior */
-	common->wcmRawSample = DEFAULT_SAMPLES;    
-			/* number of raw data to be used to for filtering */
 
 	/* tool */
 	priv->tool = tool;
 	common->wcmTool = tool;
 	tool->next = NULL;          /* next tool in list */
-	tool->arealist = area;      /* list of defined areas */
+	tool->device = pInfo;
 	/* tool->typeid is set once we know the type - see wcmSetType */
-
-	/* tool area */
-	priv->toolarea = area;
-	area->next = NULL;    /* next area in list */
-	area->device = pInfo; /* associated WacomDevice */
 
 	return 1;
 
 error:
-	free(area);
 	free(tool);
 	wcmFreeCommon(&common);
 	free(priv);
@@ -158,7 +119,6 @@ static void wcmFree(InputInfoPtr pInfo)
 	if (!priv)
 		return;
 
-	free(priv->toolarea);
 	free(priv->tool);
 	wcmFreeCommon(&priv->common);
 	free(priv);
@@ -171,12 +131,7 @@ static int wcmSetType(InputInfoPtr pInfo, const char *type)
 	WacomDevicePtr priv = pInfo->private;
 
 	if (!type)
-	{
-		xf86Msg(X_ERROR, "%s: No type or invalid type specified.\n"
-				"Must be one of stylus, touch, cursor, eraser, or pad\n",
-				pInfo->name);
-		return 0;
-	}
+		goto invalid;
 
 	if (xf86NameCmp(type, "stylus") == 0)
 	{
@@ -203,7 +158,8 @@ static int wcmSetType(InputInfoPtr pInfo, const char *type)
 	{
 		priv->flags = ABSOLUTE_FLAG|PAD_ID;
 		pInfo->type_name = WACOM_PROP_XI_TYPE_PAD;
-	}
+	} else
+		goto invalid;
 
 	/* Set the device id of the "last seen" device on this tool */
 	priv->old_device_id = wcmGetPhyDeviceID(priv);
@@ -214,6 +170,12 @@ static int wcmSetType(InputInfoPtr pInfo, const char *type)
 	priv->tool->typeid = DEVICE_ID(priv->flags); /* tool type (stylus/touch/eraser/cursor/pad) */
 
 	return 1;
+
+invalid:
+	xf86Msg(X_ERROR, "%s: No type or invalid type specified.\n"
+			 "Must be one of stylus, touch, cursor, eraser, or pad\n",
+			 pInfo->name);
+	return 0;
 }
 
 int wcmGetPhyDeviceID(WacomDevicePtr priv)
@@ -261,6 +223,8 @@ static void wcmUninit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 
 	DBG(1, priv, "\n");
 
+	/* Server 1.10 will UnInit all devices for us */
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 12
 	if (priv->isParent)
 	{
 		/* HAL removal sees the parent device removed first. */
@@ -285,22 +249,7 @@ static void wcmUninit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 		free(pInfo->name);
 		pInfo->name = NULL;
 	}
-
-	if (priv->toolarea)
-	{
-		WacomToolAreaPtr *prev_area = &priv->tool->arealist;
-		WacomToolAreaPtr area = *prev_area;
-		while (area)
-		{
-			if (area == priv->toolarea)
-			{
-				*prev_area = area->next;
-				break;
-			}
-			prev_area = &area->next;
-			area = area->next;
-		}
-	}
+#endif
 
 	if (priv->tool)
 	{
@@ -365,6 +314,11 @@ static Bool wcmMatchDevice(InputInfoPtr pLocal, WacomCommonPtr *common_return)
 		{
 			DBG(2, priv, "port share between %s and %s\n",
 					pLocal->name, pMatch->name);
+			/* FIXME: we loose the common->wcmTool here but it
+			 * gets re-added during wcmParseOptions. This is
+			 * currently required by the code, adding the tool
+			 * again here means we trigger the duplicate tool
+			 * detection */
 			wcmFreeCommon(&priv->common);
 			priv->common = wcmRefCommon(privMatch->common);
 			priv->next = priv->common->wcmDevices;
@@ -417,6 +371,66 @@ wcmInitModel(InputInfoPtr pInfo)
 	return TRUE;
 }
 
+/**
+ * Link the touch tool to the pen of the same device
+ * so we can arbitrate the events when posting them.
+ */
+static void wcmLinkTouchAndPen(InputInfoPtr pInfo)
+{
+	WacomDevicePtr priv = pInfo->private;
+	WacomCommonPtr common = priv->common;
+	InputInfoPtr device = xf86FirstLocalDevice();
+	WacomCommonPtr tmpcommon = NULL;
+	WacomDevicePtr tmppriv = NULL;
+	Bool touch_device_assigned = FALSE;
+
+	/* Lookup to find the associated pen and touch */
+	for (; device != NULL; device = device->next)
+	{
+		if (!strcmp(device->drv->driverName, "wacom"))
+		{
+			tmppriv = (WacomDevicePtr) device->private;
+			tmpcommon = tmppriv->common;
+			touch_device_assigned = (common->wcmTouchDevice ||
+						tmpcommon->wcmTouchDevice);
+
+			/* skip the same tool or already linked devices */
+			if ((tmppriv == priv) || touch_device_assigned)
+				continue;
+
+			if (tmpcommon->tablet_id == common->tablet_id)
+			{
+				if (IsTouch(tmppriv) && IsPen(priv))
+					common->wcmTouchDevice = tmppriv;
+				else if (IsTouch(priv) && IsPen(tmppriv))
+					tmpcommon->wcmTouchDevice = priv;
+
+				if (common->wcmTouchDevice ||
+						tmpcommon->wcmTouchDevice)
+				{
+					common->tablet_type |= WCM_PENTOUCH;
+					tmpcommon->tablet_type |= WCM_PENTOUCH;
+				}
+			}
+		}
+	}
+}
+
+/**
+ * Check if this device was hotplugged by the driver by checking the _source
+ * option.
+ *
+ * Must be called before wcmNeedAutoHotplug()
+ *
+ * @return True if the source for this device is the wacom driver itself or
+ * false otherwise.
+ */
+static int wcmIsHotpluggedDevice(InputInfoPtr pInfo)
+{
+	char *source = xf86CheckStrOption(pInfo->options, "_source", "");
+	return !strcmp(source, "_driver/wacom");
+}
+
 /* wcmPreInit - called for each input devices with the driver set to
  * "wacom" */
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 12
@@ -456,7 +470,7 @@ static int wcmPreInit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 	WacomCommonPtr common = NULL;
 	const char*	type;
 	char*		device, *oldname;
-	int		need_hotplug = 0;
+	int		need_hotplug = 0, is_dependent = 0;
 
 	gWacomModule.wcmDrv = drv;
 
@@ -503,7 +517,9 @@ static int wcmPreInit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 
 	oldname = pInfo->name;
 
-	if ((need_hotplug = wcmNeedAutoHotplug(pInfo, &type)))
+	if (wcmIsHotpluggedDevice(pInfo))
+		is_dependent = 1;
+	else if ((need_hotplug = wcmNeedAutoHotplug(pInfo, &type)))
 	{
 		/* we need subdevices, change the name so all of them have a
 		   type. */
@@ -520,7 +536,7 @@ static int wcmPreInit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 	if (!wcmSetType(pInfo, type))
 		goto SetupProc_fail;
 
-	if (!wcmParseOptions(pInfo, need_hotplug))
+	if (!wcmParseOptions(pInfo, need_hotplug, is_dependent))
 		goto SetupProc_fail;
 
 	if (!wcmInitModel(pInfo))
@@ -537,6 +553,12 @@ static int wcmPreInit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 		close(pInfo->fd);
 		pInfo->fd = -1;
 	}
+
+	/* only link them once per port. We need to try for both pen and touch
+	 * since we do not know which tool (touch or pen) will be added first.
+	 */
+	if (IsTouch(priv) || (IsPen(priv) && !common->wcmTouchDevice))
+		wcmLinkTouchAndPen(pInfo);
 
 	return Success;
 

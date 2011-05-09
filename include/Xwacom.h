@@ -17,6 +17,15 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
+/**
+ * @mainpage The X.Org Wacom Input Driver API Documentation
+ * @section intro Introduction
+ * The Linux Wacom Project manages the drivers, libraries, and documentation
+ * for configuring and running Wacom tablets under the Linux operating system.
+ * It contains diagnostic applications and X.Org input drivers
+ * for servers 1.7 and later.
+ */
+
 #ifndef __XORG_XWACOM_H
 #define __XORG_XWACOM_H
 
@@ -33,8 +42,6 @@
 #define ROTATE_CW 		1
 #define ROTATE_CCW 		2
 #define ROTATE_HALF 		3
-
-#define XWACOM_MAX_SAMPLES	20
 
 /* The following flags are used for button action property values to mark
  * the type of event that should be emitted when that button is pressed;

@@ -54,28 +54,34 @@ static Bool pointsInLine(WacomCommonPtr common, WacomDeviceState ds0,
 		WacomDeviceState ds1)
 {
 	Bool ret = FALSE;
+	Bool rotated = common->wcmRotate == ROTATE_CW ||
+			common->wcmRotate == ROTATE_CCW;
+	int horizon_rotated = (rotated) ?
+			WACOM_HORIZ_ALLOWED : WACOM_VERT_ALLOWED;
+	int vertical_rotated = (rotated) ?
+			WACOM_VERT_ALLOWED : WACOM_HORIZ_ALLOWED;
 
 	if (!common->wcmGestureParameters.wcmScrollDirection)
 	{
 		if ((abs(ds0.x - ds1.x) < WACOM_INLINE_DISTANCE) &&
 			(abs(ds0.y - ds1.y) > WACOM_INLINE_DISTANCE))
 		{
-			common->wcmGestureParameters.wcmScrollDirection = WACOM_VERT_ALLOWED;
+			common->wcmGestureParameters.wcmScrollDirection = horizon_rotated;
 			ret = TRUE;
 		}
 		if ((abs(ds0.y - ds1.y) < WACOM_INLINE_DISTANCE) &&
 			(abs(ds0.x - ds1.x) > WACOM_INLINE_DISTANCE))
 		{
-			common->wcmGestureParameters.wcmScrollDirection = WACOM_HORIZ_ALLOWED;
+			common->wcmGestureParameters.wcmScrollDirection = vertical_rotated;
 			ret = TRUE;
 		}
 	}
-	else if (common->wcmGestureParameters.wcmScrollDirection == WACOM_HORIZ_ALLOWED)
+	else if (common->wcmGestureParameters.wcmScrollDirection == vertical_rotated)
 	{
 		if (abs(ds0.y - ds1.y) < WACOM_INLINE_DISTANCE)
 			ret = TRUE;
 	}
-	else if (common->wcmGestureParameters.wcmScrollDirection == WACOM_VERT_ALLOWED)
+	else if (common->wcmGestureParameters.wcmScrollDirection == horizon_rotated)
 	{
 		if (abs(ds0.x - ds1.x) < WACOM_INLINE_DISTANCE)
 			ret = TRUE;
@@ -141,32 +147,45 @@ static void wcmFingerTapToClick(WacomDevicePtr priv)
 }
 
 
-/* process single finger Relative mode events
- * if touch is not in an active gesture mode.
+/* A single finger tap is defined as 1 finger tap that lasts less than
+ * wcmTapTime.  It results in a left button press.
+ *
+ * Some work must be done to make sure two fingers were not touching
+ * during this gesture. This is easy if first finger is released
+ * first.  To handle case of second finger released first, require
+ * second finger to have been released before first finger ever touched.
+ *
+ * Function relies on ds[0/1].sample to be updated only when entering or
+ * exiting proximity so no storage is needed when initial touch occurs.
  */
-static void wcmFirstFingerClick(WacomCommonPtr common)
+static void wcmSingleFingerTap(WacomDevicePtr priv)
 {
-	static int tmpStamp = 0;
-	WacomChannelPtr aChannel = common->wcmChannel;
-	WacomDeviceState ds = aChannel->valid.states[0];
-	WacomDeviceState dsLast = aChannel->valid.states[1];
-	if (ds.proximity)
+	WacomCommonPtr common = priv->common;
+	WacomChannelPtr firstChannel = common->wcmChannel;
+	WacomChannelPtr secondChannel = common->wcmChannel + 1;
+	WacomDeviceState ds[2] = { firstChannel->valid.states[0],
+				   secondChannel->valid.states[0] };
+	WacomDeviceState dsLast[2] = { firstChannel->valid.states[1],
+					secondChannel->valid.states[1] };
+
+	DBG(10, priv, "\n");
+
+	if (!ds[0].proximity && dsLast[0].proximity && !ds[1].proximity)
 	{
-		if (common->wcmTouchpadMode)
-			/* continuing left button down */
-			aChannel->valid.states[0].buttons |= 1;
-		else if (!dsLast.proximity &&
-		    (abs(tmpStamp - ds.sample) <= common->wcmGestureParameters.wcmTapTime))
+		/* Single Tap must have lasted less than wcmTapTime
+		 * and second finger must not have released after
+		 * first finger touched.
+		 */
+		if (ds[0].sample - dsLast[0].sample <=
+		    common->wcmGestureParameters.wcmTapTime &&
+		    ds[1].sample < dsLast[0].sample)
 		{
-			/* initial left button down */
-			aChannel->valid.states[0].buttons |= 1;
-			common->wcmTouchpadMode = 1;
+			/* left button down */
+			wcmSendButtonClick(priv, 1, 1);
+
+			/* left button up */
+			wcmSendButtonClick(priv, 1, 0);
 		}
-	} else {
-		tmpStamp = GetTimeInMillis();
-		if (common->wcmTouchpadMode)
-			aChannel->valid.states[0].buttons &= ~1;
-		common->wcmTouchpadMode = 0;
 	}
 }
 
@@ -198,7 +217,6 @@ void wcmGestureFilter(WacomDevicePtr priv, int channel)
 	 * was in in prox */
 	if (ds[1].proximity && !common->wcmGestureMode && dsLast[0].proximity)
 	{
-		common->wcmTouchpadMode = 0;
 		common->wcmGestureMode = GESTURE_LAG_MODE;
 	}
 
@@ -248,7 +266,6 @@ void wcmGestureFilter(WacomDevicePtr priv, int channel)
 		common->wcmGestureMode = 0;
 		common->wcmGestureParameters.wcmScrollDirection = 0;
 
-		common->wcmTouchpadMode = 0;
 		goto ret;
 	}
 
@@ -288,7 +305,7 @@ void wcmGestureFilter(WacomDevicePtr priv, int channel)
 	}
 ret:
 	if (!common->wcmGestureMode && !channel && !is_absolute(priv->pInfo))
-		wcmFirstFingerClick(common);
+		wcmSingleFingerTap(priv);
 }
 
 static void wcmSendScrollEvent(WacomDevicePtr priv, int dist,

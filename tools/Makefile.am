@@ -23,3 +23,12 @@ bin_PROGRAMS = xsetwacom isdv4-serial-debugger
 AM_CPPFLAGS = -I$(top_srcdir)/include
 AM_CFLAGS = $(XORG_CFLAGS) $(X11_CFLAGS)
 AM_LDFLAGS = $(X11_LIBS)
+
+
+if UNITTESTS
+check_PROGRAMS = xsetwacom-test
+xsetwacom_test_SOURCES=xsetwacom.c
+xsetwacom_test_CFLAGS=-DBUILD_TEST $(X11_CFLAGS)
+
+TESTS=$(check_PROGRAMS)
+endif
