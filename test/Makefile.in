@@ -15,26 +15,7 @@
 
 @SET_MAKE@
 
-#  Copyright 2009 Red Hat, Inc.
-#
-#  Permission is hereby granted, free of charge, to any person obtaining a
-#  copy of this software and associated documentation files (the "Software"),
-#  to deal in the Software without restriction, including without limitation
-#  on the rights to use, copy, modify, merge, publish, distribute, sub
-#  license, and/or sell copies of the Software, and to permit persons to whom
-#  the Software is furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice (including the next
-#  paragraph) shall be included in all copies or substantial portions of the
-#  Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
-#  ADAM JACKSON BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-#  IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-#  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
+# shared makefile between src/Makefile.am and test/Makefile.am
 VPATH = @srcdir@
 pkgdatadir = $(datadir)/@PACKAGE@
 pkgincludedir = $(includedir)/@PACKAGE@
@@ -54,10 +35,10 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-bin_PROGRAMS = xsetwacom$(EXEEXT) isdv4-serial-debugger$(EXEEXT)
-@UNITTESTS_TRUE@check_PROGRAMS = xsetwacom-test$(EXEEXT)
-subdir = tools
-DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
+DIST_COMMON = $(srcdir)/../src/common.mk $(srcdir)/Makefile.am \
+	$(srcdir)/Makefile.in
+@UNITTESTS_TRUE@check_PROGRAMS = wacom-tests$(EXEEXT)
+subdir = test
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -66,26 +47,43 @@ mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)"
-PROGRAMS = $(bin_PROGRAMS)
-isdv4_serial_debugger_SOURCES = isdv4-serial-debugger.c
-isdv4_serial_debugger_OBJECTS = isdv4-serial-debugger.$(OBJEXT)
-isdv4_serial_debugger_LDADD = $(LDADD)
+libwacom_test_la_LIBADD =
+am__libwacom_test_la_SOURCES_DIST = $(top_srcdir)/src/xf86Wacom.c \
+	$(top_srcdir)/src/xf86Wacom.h $(top_srcdir)/src/wcmCommon.c \
+	$(top_srcdir)/src/wcmConfig.c $(top_srcdir)/src/wcmISDV4.c \
+	$(top_srcdir)/src/wcmFilter.c $(top_srcdir)/src/wcmFilter.h \
+	$(top_srcdir)/src/xf86WacomDefs.h $(top_srcdir)/src/wcmUSB.c \
+	$(top_srcdir)/src/wcmXCommand.c \
+	$(top_srcdir)/src/wcmValidateDevice.c \
+	$(top_srcdir)/src/wcmTouchFilter.c
+@UNITTESTS_TRUE@am__objects_1 = libwacom_test_la-xf86Wacom.lo \
+@UNITTESTS_TRUE@	libwacom_test_la-wcmCommon.lo \
+@UNITTESTS_TRUE@	libwacom_test_la-wcmConfig.lo \
+@UNITTESTS_TRUE@	libwacom_test_la-wcmISDV4.lo \
+@UNITTESTS_TRUE@	libwacom_test_la-wcmFilter.lo \
+@UNITTESTS_TRUE@	libwacom_test_la-wcmUSB.lo \
+@UNITTESTS_TRUE@	libwacom_test_la-wcmXCommand.lo \
+@UNITTESTS_TRUE@	libwacom_test_la-wcmValidateDevice.lo \
+@UNITTESTS_TRUE@	libwacom_test_la-wcmTouchFilter.lo
+@UNITTESTS_TRUE@am_libwacom_test_la_OBJECTS = $(am__objects_1)
+libwacom_test_la_OBJECTS = $(am_libwacom_test_la_OBJECTS)
 AM_V_lt = $(am__v_lt_$(V))
 am__v_lt_ = $(am__v_lt_$(AM_DEFAULT_VERBOSITY))
 am__v_lt_0 = --silent
-xsetwacom_SOURCES = xsetwacom.c
-xsetwacom_OBJECTS = xsetwacom.$(OBJEXT)
-xsetwacom_LDADD = $(LDADD)
-am__xsetwacom_test_SOURCES_DIST = xsetwacom.c
-@UNITTESTS_TRUE@am_xsetwacom_test_OBJECTS =  \
-@UNITTESTS_TRUE@	xsetwacom_test-xsetwacom.$(OBJEXT)
-xsetwacom_test_OBJECTS = $(am_xsetwacom_test_OBJECTS)
-xsetwacom_test_LDADD = $(LDADD)
-xsetwacom_test_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+libwacom_test_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
-	$(xsetwacom_test_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o \
-	$@
+	$(libwacom_test_la_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) \
+	-o $@
+@UNITTESTS_TRUE@am_libwacom_test_la_rpath =
+am__wacom_tests_SOURCES_DIST = wacom-tests.c fake-symbols.c \
+	fake-symbols.h
+@UNITTESTS_TRUE@am__objects_2 = fake-symbols.$(OBJEXT)
+@UNITTESTS_TRUE@am_wacom_tests_OBJECTS = wacom-tests.$(OBJEXT) \
+@UNITTESTS_TRUE@	$(am__objects_2)
+wacom_tests_OBJECTS = $(am_wacom_tests_OBJECTS)
+am__DEPENDENCIES_1 =
+@UNITTESTS_TRUE@wacom_tests_DEPENDENCIES = $(TEST_LDADD) \
+@UNITTESTS_TRUE@	$(am__DEPENDENCIES_1)
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__depfiles_maybe = depfiles
@@ -112,10 +110,9 @@ am__v_CCLD_0 = @echo "  CCLD  " $@;
 AM_V_GEN = $(am__v_GEN_$(V))
 am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
 am__v_GEN_0 = @echo "  GEN   " $@;
-SOURCES = isdv4-serial-debugger.c xsetwacom.c \
-	$(xsetwacom_test_SOURCES)
-DIST_SOURCES = isdv4-serial-debugger.c xsetwacom.c \
-	$(am__xsetwacom_test_SOURCES_DIST)
+SOURCES = $(libwacom_test_la_SOURCES) $(wacom_tests_SOURCES)
+DIST_SOURCES = $(am__libwacom_test_la_SOURCES_DIST) \
+	$(am__wacom_tests_SOURCES_DIST)
 ETAGS = etags
 CTAGS = ctags
 am__tty_colors = \
@@ -265,17 +262,35 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-AM_CPPFLAGS = -I$(top_srcdir)/include
-AM_CFLAGS = $(XORG_CFLAGS) $(X11_CFLAGS)
-AM_LDFLAGS = $(X11_LIBS)
-@UNITTESTS_TRUE@xsetwacom_test_SOURCES = xsetwacom.c
-@UNITTESTS_TRUE@xsetwacom_test_CFLAGS = -DBUILD_TEST $(X11_CFLAGS)
+@UNITTESTS_TRUE@DRIVER_SOURCES = \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/xf86Wacom.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/xf86Wacom.h \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmCommon.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmConfig.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmISDV4.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmFilter.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmFilter.h \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/xf86WacomDefs.h \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmUSB.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmXCommand.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmValidateDevice.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmTouchFilter.c
+
+@UNITTESTS_TRUE@check_LTLIBRARIES = libwacom-test.la
+@UNITTESTS_TRUE@libwacom_test_la_SOURCES = $(DRIVER_SOURCES)
+@UNITTESTS_TRUE@libwacom_test_la_CFLAGS = -DDISABLE_STATIC -I$(top_srcdir)/src $(XORG_CFLAGS) $(CWARNFLAGS) -fvisibility=default
 @UNITTESTS_TRUE@TESTS = $(check_PROGRAMS)
+@UNITTESTS_TRUE@INCLUDES = -I$(top_srcdir)/src -I$(top_srcdir)/include
+@UNITTESTS_TRUE@AM_CFLAGS = $(XORG_CFLAGS) $(CWARNFLAGS) $(UDEV_CFLAGS)
+@UNITTESTS_TRUE@TEST_LDADD = libwacom-test.la
+@UNITTESTS_TRUE@COMMON_SOURCES = fake-symbols.c fake-symbols.h
+@UNITTESTS_TRUE@wacom_tests_LDADD = $(TEST_LDADD) $(UDEV_LIBS)
+@UNITTESTS_TRUE@wacom_tests_SOURCES = wacom-tests.c $(COMMON_SOURCES)
 all: all-am
 
 .SUFFIXES:
 .SUFFIXES: .c .lo .o .obj
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
+$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am $(srcdir)/../src/common.mk $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
 	    *$$dep*) \
@@ -284,9 +299,9 @@ $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__confi
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign tools/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign test/Makefile'; \
 	$(am__cd) $(top_srcdir) && \
-	  $(AUTOMAKE) --foreign tools/Makefile
+	  $(AUTOMAKE) --foreign test/Makefile
 .PRECIOUS: Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \
@@ -305,49 +320,17 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
-install-binPROGRAMS: $(bin_PROGRAMS)
-	@$(NORMAL_INSTALL)
-	test -z "$(bindir)" || $(MKDIR_P) "$(DESTDIR)$(bindir)"
-	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
-	for p in $$list; do echo "$$p $$p"; done | \
-	sed 's/$(EXEEXT)$$//' | \
-	while read p p1; do if test -f $$p || test -f $$p1; \
-	  then echo "$$p"; echo "$$p"; else :; fi; \
-	done | \
-	sed -e 'p;s,.*/,,;n;h' -e 's|.*|.|' \
-	    -e 'p;x;s,.*/,,;s/$(EXEEXT)$$//;$(transform);s/$$/$(EXEEXT)/' | \
-	sed 'N;N;N;s,\n, ,g' | \
-	$(AWK) 'BEGIN { files["."] = ""; dirs["."] = 1 } \
-	  { d=$$3; if (dirs[d] != 1) { print "d", d; dirs[d] = 1 } \
-	    if ($$2 == $$4) files[d] = files[d] " " $$1; \
-	    else { print "f", $$3 "/" $$4, $$1; } } \
-	  END { for (d in files) print "f", d, files[d] }' | \
-	while read type dir files; do \
-	    if test "$$dir" = .; then dir=; else dir=/$$dir; fi; \
-	    test -z "$$files" || { \
-	    echo " $(INSTALL_PROGRAM_ENV) $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL_PROGRAM) $$files '$(DESTDIR)$(bindir)$$dir'"; \
-	    $(INSTALL_PROGRAM_ENV) $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=install $(INSTALL_PROGRAM) $$files "$(DESTDIR)$(bindir)$$dir" || exit $$?; \
-	    } \
-	; done
 
-uninstall-binPROGRAMS:
-	@$(NORMAL_UNINSTALL)
-	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
-	files=`for p in $$list; do echo "$$p"; done | \
-	  sed -e 'h;s,^.*/,,;s/$(EXEEXT)$$//;$(transform)' \
-	      -e 's/$$/$(EXEEXT)/' `; \
-	test -n "$$list" || exit 0; \
-	echo " ( cd '$(DESTDIR)$(bindir)' && rm -f" $$files ")"; \
-	cd "$(DESTDIR)$(bindir)" && rm -f $$files
-
-clean-binPROGRAMS:
-	@list='$(bin_PROGRAMS)'; test -n "$$list" || exit 0; \
-	echo " rm -f" $$list; \
-	rm -f $$list || exit $$?; \
-	test -n "$(EXEEXT)" || exit 0; \
-	list=`for p in $$list; do echo "$$p"; done | sed 's/$(EXEEXT)$$//'`; \
-	echo " rm -f" $$list; \
-	rm -f $$list
+clean-checkLTLIBRARIES:
+	-test -z "$(check_LTLIBRARIES)" || rm -f $(check_LTLIBRARIES)
+	@list='$(check_LTLIBRARIES)'; for p in $$list; do \
+	  dir="`echo $$p | sed -e 's|/[^/]*$$||'`"; \
+	  test "$$dir" != "$$p" || dir=.; \
+	  echo "rm -f \"$${dir}/so_locations\""; \
+	  rm -f "$${dir}/so_locations"; \
+	done
+libwacom-test.la: $(libwacom_test_la_OBJECTS) $(libwacom_test_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(libwacom_test_la_LINK) $(am_libwacom_test_la_rpath) $(libwacom_test_la_OBJECTS) $(libwacom_test_la_LIBADD) $(LIBS)
 
 clean-checkPROGRAMS:
 	@list='$(check_PROGRAMS)'; test -n "$$list" || exit 0; \
@@ -357,15 +340,9 @@ clean-checkPROGRAMS:
 	list=`for p in $$list; do echo "$$p"; done | sed 's/$(EXEEXT)$$//'`; \
 	echo " rm -f" $$list; \
 	rm -f $$list
-isdv4-serial-debugger$(EXEEXT): $(isdv4_serial_debugger_OBJECTS) $(isdv4_serial_debugger_DEPENDENCIES) 
-	@rm -f isdv4-serial-debugger$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(isdv4_serial_debugger_OBJECTS) $(isdv4_serial_debugger_LDADD) $(LIBS)
-xsetwacom$(EXEEXT): $(xsetwacom_OBJECTS) $(xsetwacom_DEPENDENCIES) 
-	@rm -f xsetwacom$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(xsetwacom_OBJECTS) $(xsetwacom_LDADD) $(LIBS)
-xsetwacom-test$(EXEEXT): $(xsetwacom_test_OBJECTS) $(xsetwacom_test_DEPENDENCIES) 
-	@rm -f xsetwacom-test$(EXEEXT)
-	$(AM_V_CCLD)$(xsetwacom_test_LINK) $(xsetwacom_test_OBJECTS) $(xsetwacom_test_LDADD) $(LIBS)
+wacom-tests$(EXEEXT): $(wacom_tests_OBJECTS) $(wacom_tests_DEPENDENCIES) 
+	@rm -f wacom-tests$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(wacom_tests_OBJECTS) $(wacom_tests_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -373,9 +350,17 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/isdv4-serial-debugger.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xsetwacom.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xsetwacom_test-xsetwacom.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fake-symbols.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-wcmCommon.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-wcmConfig.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-wcmFilter.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-wcmISDV4.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-wcmTouchFilter.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-wcmUSB.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-wcmValidateDevice.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-wcmXCommand.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libwacom_test_la-xf86Wacom.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/wacom-tests.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
@@ -401,21 +386,77 @@ distclean-compile:
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LTCOMPILE) -c -o $@ $<
 
-xsetwacom_test-xsetwacom.o: xsetwacom.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xsetwacom_test_CFLAGS) $(CFLAGS) -MT xsetwacom_test-xsetwacom.o -MD -MP -MF $(DEPDIR)/xsetwacom_test-xsetwacom.Tpo -c -o xsetwacom_test-xsetwacom.o `test -f 'xsetwacom.c' || echo '$(srcdir)/'`xsetwacom.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/xsetwacom_test-xsetwacom.Tpo $(DEPDIR)/xsetwacom_test-xsetwacom.Po
+libwacom_test_la-xf86Wacom.lo: $(top_srcdir)/src/xf86Wacom.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-xf86Wacom.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-xf86Wacom.Tpo -c -o libwacom_test_la-xf86Wacom.lo `test -f '$(top_srcdir)/src/xf86Wacom.c' || echo '$(srcdir)/'`$(top_srcdir)/src/xf86Wacom.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-xf86Wacom.Tpo $(DEPDIR)/libwacom_test_la-xf86Wacom.Plo
 @am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='xsetwacom.c' object='xsetwacom_test-xsetwacom.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/xf86Wacom.c' object='libwacom_test_la-xf86Wacom.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xsetwacom_test_CFLAGS) $(CFLAGS) -c -o xsetwacom_test-xsetwacom.o `test -f 'xsetwacom.c' || echo '$(srcdir)/'`xsetwacom.c
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-xf86Wacom.lo `test -f '$(top_srcdir)/src/xf86Wacom.c' || echo '$(srcdir)/'`$(top_srcdir)/src/xf86Wacom.c
 
-xsetwacom_test-xsetwacom.obj: xsetwacom.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xsetwacom_test_CFLAGS) $(CFLAGS) -MT xsetwacom_test-xsetwacom.obj -MD -MP -MF $(DEPDIR)/xsetwacom_test-xsetwacom.Tpo -c -o xsetwacom_test-xsetwacom.obj `if test -f 'xsetwacom.c'; then $(CYGPATH_W) 'xsetwacom.c'; else $(CYGPATH_W) '$(srcdir)/xsetwacom.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/xsetwacom_test-xsetwacom.Tpo $(DEPDIR)/xsetwacom_test-xsetwacom.Po
+libwacom_test_la-wcmCommon.lo: $(top_srcdir)/src/wcmCommon.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-wcmCommon.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-wcmCommon.Tpo -c -o libwacom_test_la-wcmCommon.lo `test -f '$(top_srcdir)/src/wcmCommon.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmCommon.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-wcmCommon.Tpo $(DEPDIR)/libwacom_test_la-wcmCommon.Plo
 @am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='xsetwacom.c' object='xsetwacom_test-xsetwacom.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/wcmCommon.c' object='libwacom_test_la-wcmCommon.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xsetwacom_test_CFLAGS) $(CFLAGS) -c -o xsetwacom_test-xsetwacom.obj `if test -f 'xsetwacom.c'; then $(CYGPATH_W) 'xsetwacom.c'; else $(CYGPATH_W) '$(srcdir)/xsetwacom.c'; fi`
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-wcmCommon.lo `test -f '$(top_srcdir)/src/wcmCommon.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmCommon.c
+
+libwacom_test_la-wcmConfig.lo: $(top_srcdir)/src/wcmConfig.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-wcmConfig.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-wcmConfig.Tpo -c -o libwacom_test_la-wcmConfig.lo `test -f '$(top_srcdir)/src/wcmConfig.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmConfig.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-wcmConfig.Tpo $(DEPDIR)/libwacom_test_la-wcmConfig.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/wcmConfig.c' object='libwacom_test_la-wcmConfig.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-wcmConfig.lo `test -f '$(top_srcdir)/src/wcmConfig.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmConfig.c
+
+libwacom_test_la-wcmISDV4.lo: $(top_srcdir)/src/wcmISDV4.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-wcmISDV4.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-wcmISDV4.Tpo -c -o libwacom_test_la-wcmISDV4.lo `test -f '$(top_srcdir)/src/wcmISDV4.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmISDV4.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-wcmISDV4.Tpo $(DEPDIR)/libwacom_test_la-wcmISDV4.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/wcmISDV4.c' object='libwacom_test_la-wcmISDV4.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-wcmISDV4.lo `test -f '$(top_srcdir)/src/wcmISDV4.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmISDV4.c
+
+libwacom_test_la-wcmFilter.lo: $(top_srcdir)/src/wcmFilter.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-wcmFilter.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-wcmFilter.Tpo -c -o libwacom_test_la-wcmFilter.lo `test -f '$(top_srcdir)/src/wcmFilter.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmFilter.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-wcmFilter.Tpo $(DEPDIR)/libwacom_test_la-wcmFilter.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/wcmFilter.c' object='libwacom_test_la-wcmFilter.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-wcmFilter.lo `test -f '$(top_srcdir)/src/wcmFilter.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmFilter.c
+
+libwacom_test_la-wcmUSB.lo: $(top_srcdir)/src/wcmUSB.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-wcmUSB.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-wcmUSB.Tpo -c -o libwacom_test_la-wcmUSB.lo `test -f '$(top_srcdir)/src/wcmUSB.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmUSB.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-wcmUSB.Tpo $(DEPDIR)/libwacom_test_la-wcmUSB.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/wcmUSB.c' object='libwacom_test_la-wcmUSB.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-wcmUSB.lo `test -f '$(top_srcdir)/src/wcmUSB.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmUSB.c
+
+libwacom_test_la-wcmXCommand.lo: $(top_srcdir)/src/wcmXCommand.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-wcmXCommand.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-wcmXCommand.Tpo -c -o libwacom_test_la-wcmXCommand.lo `test -f '$(top_srcdir)/src/wcmXCommand.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmXCommand.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-wcmXCommand.Tpo $(DEPDIR)/libwacom_test_la-wcmXCommand.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/wcmXCommand.c' object='libwacom_test_la-wcmXCommand.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-wcmXCommand.lo `test -f '$(top_srcdir)/src/wcmXCommand.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmXCommand.c
+
+libwacom_test_la-wcmValidateDevice.lo: $(top_srcdir)/src/wcmValidateDevice.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-wcmValidateDevice.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-wcmValidateDevice.Tpo -c -o libwacom_test_la-wcmValidateDevice.lo `test -f '$(top_srcdir)/src/wcmValidateDevice.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmValidateDevice.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-wcmValidateDevice.Tpo $(DEPDIR)/libwacom_test_la-wcmValidateDevice.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/wcmValidateDevice.c' object='libwacom_test_la-wcmValidateDevice.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-wcmValidateDevice.lo `test -f '$(top_srcdir)/src/wcmValidateDevice.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmValidateDevice.c
+
+libwacom_test_la-wcmTouchFilter.lo: $(top_srcdir)/src/wcmTouchFilter.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -MT libwacom_test_la-wcmTouchFilter.lo -MD -MP -MF $(DEPDIR)/libwacom_test_la-wcmTouchFilter.Tpo -c -o libwacom_test_la-wcmTouchFilter.lo `test -f '$(top_srcdir)/src/wcmTouchFilter.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmTouchFilter.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libwacom_test_la-wcmTouchFilter.Tpo $(DEPDIR)/libwacom_test_la-wcmTouchFilter.Plo
+@am__fastdepCC_FALSE@	$(AM_V_CC) @AM_BACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/src/wcmTouchFilter.c' object='libwacom_test_la-wcmTouchFilter.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libwacom_test_la_CFLAGS) $(CFLAGS) -c -o libwacom_test_la-wcmTouchFilter.lo `test -f '$(top_srcdir)/src/wcmTouchFilter.c' || echo '$(srcdir)/'`$(top_srcdir)/src/wcmTouchFilter.c
 
 mostlyclean-libtool:
 	-rm -f *.lo
@@ -598,14 +639,11 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 check-am: all-am
-	$(MAKE) $(AM_MAKEFLAGS) $(check_PROGRAMS)
+	$(MAKE) $(AM_MAKEFLAGS) $(check_LTLIBRARIES) $(check_PROGRAMS)
 	$(MAKE) $(AM_MAKEFLAGS) check-TESTS
 check: check-am
-all-am: Makefile $(PROGRAMS)
+all-am: Makefile
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)"; do \
-	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
-	done
 install: install-am
 install-exec: install-exec-am
 install-data: install-data-am
@@ -633,7 +671,7 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-binPROGRAMS clean-checkPROGRAMS clean-generic \
+clean-am: clean-checkLTLIBRARIES clean-checkPROGRAMS clean-generic \
 	clean-libtool mostlyclean-am
 
 distclean: distclean-am
@@ -660,7 +698,7 @@ install-dvi: install-dvi-am
 
 install-dvi-am:
 
-install-exec-am: install-binPROGRAMS
+install-exec-am:
 
 install-html: install-html-am
 
@@ -700,24 +738,23 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS
+uninstall-am:
 
 .MAKE: check-am install-am install-strip
 
 .PHONY: CTAGS GTAGS all all-am check check-TESTS check-am clean \
-	clean-binPROGRAMS clean-checkPROGRAMS clean-generic \
+	clean-checkLTLIBRARIES clean-checkPROGRAMS clean-generic \
 	clean-libtool ctags distclean distclean-compile \
 	distclean-generic distclean-libtool distclean-tags distdir dvi \
 	dvi-am html html-am info info-am install install-am \
-	install-binPROGRAMS install-data install-data-am install-dvi \
-	install-dvi-am install-exec install-exec-am install-html \
-	install-html-am install-info install-info-am install-man \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-compile mostlyclean-generic mostlyclean-libtool \
-	pdf pdf-am ps ps-am tags uninstall uninstall-am \
-	uninstall-binPROGRAMS
+	install-data install-data-am install-dvi install-dvi-am \
+	install-exec install-exec-am install-html install-html-am \
+	install-info install-info-am install-man install-pdf \
+	install-pdf-am install-ps install-ps-am install-strip \
+	installcheck installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
+	tags uninstall uninstall-am
 
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
