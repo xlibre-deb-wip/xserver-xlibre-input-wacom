@@ -1,7 +1,7 @@
 .ds q \N'34'
 .TH WACOM __drivermansuffix__ __vendorversion__
 .SH NAME
-wacom \- Wacom input driver
+__drivername__ \- Wacom input driver
 .SH SYNOPSIS
 .nf
 .B "Section \*qInputDevice\*q"
@@ -17,20 +17,46 @@ is an X input driver for Wacom devices.
 .PP
 The
 .B wacom
-driver functions as a pointer input device, and may be used as the
-X server's core pointer.
+driver functions as a pointer input device.
 .SH SUPPORTED HARDWARE
 This driver supports the Wacom IV and Wacom V protocols. Serial tablets only 
-need this driver.  USB tablet support is available on some Linux platforms. 
-USB tablets needs wacom kernel driver being loaded before this driver starts.  
-Please check linuxwacom.sf.net for latest updates of Wacom X and kernel drivers.
+need this driver.  USB tablet support is available on some Linux platforms
+and requires the wacom kernel driver being loaded before this driver starts.
+Please check http://linuxwacom.sf.net for latest updates of Wacom X and
+kernel drivers.
+.SH DRIVER-INTERNAL DEVICE HOTPLUGGING
+When input device hotplugging in the X server is enabled and no
+.B InputDevice
+section exists for a compatible tablet device and an
+.B InputClass
+section (see xorg.conf.d(5x)) assigns this driver for the device, the
+.B wacom
+driver creates multiple X devices for each a physical device, one X device
+for each available tool. The list of tools is hardware-dependent. See
+.B Option "Type"
+as outlined in the
+.B CONFIGURATION DETAILS
+section.
+.PP
+These tool-specific devices are referred to as parent device and dependent
+device.  The parent device is the one presented by the system and the one
+that causes the X server to load the
+.B wacom
+driver. This parent device then causes the automatic addition of several
+dependent devices. If the parent device is unplugged or otherwise removed,
+the dependent devices will be automatically removed as well.
+.PP
+Dependent devices may be assigned tool-specific options through additional
+.B InputClass
+sections. We recommend that a
+.B MatchDriver "wacom"
+line is used in these sections in addition to the user-specific pattern.
 .SH CONFIGURATION DETAILS
-Please refer to xorg.conf(5x) for general configuration
+Please refer to xorg.conf(5x) or xorg.conf.d(5x) for general configuration
 details and for options that can be used with all input drivers.  This
 section only covers configuration details specific to this driver.
 .PP
-Multiple instances of the Wacom devices can cohabit. It can be useful
-to define multiple devices with different active zones. Each device
+Multiple instances of the Wacom devices can cohabit. Each device
 supports the following entries:
 .RS 8
 .TP 4
@@ -133,18 +159,14 @@ Tablet PCs with touch feature; "off" for all other models.
 .B Option \fI"Capacity"\fP \fI"number"\fP
 sets touch sensitivity level for capacitive touch device, where number 
 can be an integer from -1 to 5.  Default is 3 for capacitive tools and 
--1 for none capacitive tools.
-.TP 4
-.B Option \fI"Speed"\fP \fI"Rspeed"\fP
-sets the cursor's relative movement speed to Rspeed.  The default value is 1.0.  
-A Rspeed greater than 1.0 will speed up the cursor's relative movement.  A Rspeed 
-less than 1.0 but greater than 0 will slow down the cursor's relative movement. 
-A Rspeed too close to 0 is not recommanded.
+-1 for non-capacitive tools.
 .TP 4
 .B Option \fI"Rotate"\fP \fI"CW"|"CCW"|"HALF"|"NONE"\fP
 rotates the tablet orientation counterclockwise (CCW) or clockwise (CW) or 180 degrees (HALF). 
 If you have specific tablet mappings, i.e. TopX/Y or BottomX/Y were set, the mapping will be 
-applied before rotation. The default is "NONE".
+applied before rotation. Rotation must be applied to the parent device
+(usually the stylus), rotation settings on hotplugged devices will be
+ignored. The default is "NONE".
 .TP 4
 .B Option \fI"PressCurve"\fP \fI"x1,y1,x2,y2"\fP
 sets pressure curve by control points x1, y1, x2, and y2.  Their values are in range 
@@ -157,13 +179,6 @@ slightly depressed curve (firmer) might be "5,0,100,95";
 slightly raised curve (softer) might be "0,5,95,100".
 The pressure curve is only applicable to devices of type stylus or eraser,
 other devices do not honor this setting.
-
-.TP 4
-.B Option \fI"KeepShape"\fP \fI"on"|"off"\fP
-When this option is enabled, the active zone  begins according to TopX
-and TopY.  The bottom corner is adjusted to keep the ratio width/height
-of the active zone the same as the screen while maximizing the area
-described by TopX, TopY, BottomX, BottomY.
 .TP 4
 .B Option \fI"DebugLevel"\fP \fI"number"\fP
 sets the level of debugging info for tool-specific messages.  There are 12
@@ -191,12 +206,20 @@ option is only available on wacom V devices (Intuos series and Cintiq 21U).
 To see which serial number belongs to a device, you need to run the utility program, 
 xsetwacom, which comes with linuxwacom package.
 .TP 4
+.B Option \fI"ToolSerials"\fP \fI"number[,type[,label]][;...]"\fP
+sets the list of serial numbered devices that need to be hotplugged for a physical
+device. The 'type' option may be any of "pen", "airbrush", "artpen", or "cursor".
+This option is only available on wacom V devices (Intuos series and Cintiq 21U).
+To see which serial number belongs to a device, you need to run the utility program,
+xsetwacom, that comes with this driver.
+.TP 4
 .B Option \fI"Threshold"\fP \fI"number"\fP
 sets the pressure threshold used to generate a button 1 events of stylus.
+The threshold applies to the normalised pressure range of [0..2048].
 The default is 27.
 .RE
 .SH "SEE ALSO"
-Xorg(1x), xorg.conf(5x), xorgconfig(1x), Xserver(1x), X(7).
+Xorg(1x), xorg.conf(5x), xorg.conf.d(5x), xorgconfig(1x), Xserver(1x), X(7).
 .SH AUTHORS
 Frederic Lepied <lepied@xfree86.org>,
 Ping Cheng <pingc@wacom.com>,

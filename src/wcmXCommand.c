@@ -165,20 +165,6 @@ void InitWcmDeviceProperties(InputInfoPtr pInfo)
 	values[3] = priv->serial;
 	prop_serials = InitWcmAtom(pInfo->dev, WACOM_PROP_SERIALIDS, 32, 4, values);
 
-	if (IsPad(priv)) {
-		values[0] = priv->striplup;
-		values[1] = priv->stripldn;
-		values[2] = priv->striprup;
-		values[3] = priv->striprdn;
-		prop_strip_buttons = InitWcmAtom(pInfo->dev, WACOM_PROP_STRIPBUTTONS, 8, 4, values);
-
-		values[0] = priv->relup;
-		values[1] = priv->reldn;
-		values[2] = priv->wheelup;
-		values[3] = priv->wheeldn;
-		prop_wheel_buttons = InitWcmAtom(pInfo->dev, WACOM_PROP_WHEELBUTTONS, 8, 4, values);
-	}
-
 	if (IsCursor(priv)) {
 		values[0] = common->wcmCursorProxoutDist;
 		prop_cursorprox = InitWcmAtom(pInfo->dev, WACOM_PROP_PROXIMITY_THRESHOLD, 32, 1, values);
@@ -198,7 +184,7 @@ void InitWcmDeviceProperties(InputInfoPtr pInfo)
 	prop_touch = InitWcmAtom(pInfo->dev, WACOM_PROP_TOUCH, 8, 1, values);
 
 	if (IsStylus(priv)) {
-		values[0] = common->wcmTPCButton;
+		values[0] = !common->wcmTPCButton;
 		prop_hover = InitWcmAtom(pInfo->dev, WACOM_PROP_HOVER, 8, 1, values);
 	}
 
@@ -216,6 +202,17 @@ void InitWcmDeviceProperties(InputInfoPtr pInfo)
 	/* default to no actions */
 	memset(values, 0, sizeof(values));
 	prop_btnactions = InitWcmAtom(pInfo->dev, WACOM_PROP_BUTTON_ACTIONS, -32, WCM_MAX_MOUSE_BUTTONS, values);
+
+	if (IsPad(priv)) {
+		memset(values, 0, sizeof(values));
+		prop_strip_buttons = InitWcmAtom(pInfo->dev, WACOM_PROP_STRIPBUTTONS, -32, 4, values);
+	}
+
+	if (IsPad(priv) || IsCursor(priv))
+	{
+		memset(values, 0, sizeof(values));
+		prop_wheel_buttons = InitWcmAtom(pInfo->dev, WACOM_PROP_WHEELBUTTONS, -32, 4, values);
+	}
 
 #ifdef DEBUG
 	values[0] = priv->debugLevel;
@@ -300,7 +297,7 @@ static void wcmUpdateButtonKeyActions(DeviceIntPtr dev, XIPropertyValuePtr prop,
 	for (i = 0; i < prop->size; i++)
 	{
 		/* keys is one based array to align with X buttons */
-		memset(keys[i+1], 0, sizeof(keys[i]));
+		memset(keys[i+1], 0, sizeof(keys[i+1]));
 
 		if (!values[i])
 			continue;
@@ -537,6 +534,33 @@ static int wcmSetStripProperty(DeviceIntPtr dev, Atom property,
 }
 
 /**
+ * Update the rotation property for all tools on the same physical tablet as
+ * pInfo.
+ */
+void wcmUpdateRotationProperty(WacomDevicePtr priv)
+{
+	WacomCommonPtr common = priv->common;
+	WacomDevicePtr other;
+	char rotation = common->wcmRotate;
+
+	for (other = common->wcmDevices; other; other = other->next)
+	{
+		InputInfoPtr pInfo;
+		DeviceIntPtr dev;
+
+		if (other == priv)
+			continue;
+
+		pInfo = other->pInfo;
+		dev = pInfo->dev;
+
+		XIChangeDeviceProperty(dev, prop_rotation, XA_INTEGER, 8,
+				       PropModeReplace, 1, &rotation,
+				       TRUE);
+	}
+}
+
+/**
  * Only allow deletion of a property if it is not being used by any of the
  * button actions.
  */
@@ -569,32 +593,9 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 	if (property == prop_tablet_area)
 	{
 		INT32 *values = (INT32*)prop->data;
-		WacomToolAreaPtr area = priv->toolarea;
 
 		if (prop->size != 4 || prop->format != 32)
 			return BadValue;
-
-		/* value validation is unnecessary since we let utility programs, such as
-		 * xsetwacom and userland control panel take care of the validation role.
-		 * when all four values are set to -1, it is an area reset (xydefault) */
-		if ((values[0] != -1) || (values[1] != -1) ||
-				(values[2] != -1) || (values[3] != -1))
-		{
-			WacomToolArea tmp_area = *area;
-
-			area->topX = values[0];
-			area->topY = values[1];
-			area->bottomX = values[2];
-			area->bottomY = values[3];
-
-			/* validate the area */
-			if (wcmAreaListOverlap(area, priv->tool->arealist))
-			{
-				*area = tmp_area;
-				return BadValue;
-			}
-			*area = tmp_area;
-		}
 
 		if (!checkonly)
 		{
@@ -607,10 +608,10 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 				values[3] = priv->maxY;
 			}
 
-			priv->topX = area->topX = values[0];
-			priv->topY = area->topY = values[1];
-			priv->bottomX = area->bottomX = values[2];
-			priv->bottomY = area->bottomY = values[3];
+			priv->topX = values[0];
+			priv->topY = values[1];
+			priv->bottomX = values[2];
+			priv->bottomY = values[3];
 		}
 	} else if (property == prop_pressurecurve)
 	{
@@ -643,7 +644,7 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 		if ((values[0] < 0) || (values[0] > 100))
 			return BadValue;
 
-		if ((values[1] < 0) || (values[1] > XWACOM_MAX_SAMPLES))
+		if ((values[1] < 1) || (values[1] > MAX_SAMPLES))
 			return BadValue;
 
 		if (!checkonly)
@@ -664,6 +665,7 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 		if (!checkonly && common->wcmRotate != value)
 			wcmRotateTablet(pInfo, value);
+
 	} else if (property == prop_serials)
 	{
 		return BadValue; /* Read-only */
@@ -683,7 +685,7 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 		value = *(CARD32*)prop->data;
 
-		if (value > 255)
+		if (value > common->wcmMaxDist)
 			return BadValue;
 
 		if (!checkonly)
@@ -773,7 +775,7 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 			return BadMatch;
 
 		if (!checkonly)
-			common->wcmTPCButton = values[0];
+			common->wcmTPCButton = !values[0];
 #ifdef DEBUG
 	} else if (property == prop_debuglevels)
 	{

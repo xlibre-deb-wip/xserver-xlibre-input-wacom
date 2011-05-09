@@ -24,6 +24,8 @@
 #include <wacom-properties.h>
 #include "Xwacom.h"
 
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -53,7 +55,8 @@ enum printformat {
 enum prop_flags {
 	PROP_FLAG_BOOLEAN = 1,
 	PROP_FLAG_READONLY = 2,
-	PROP_FLAG_WRITEONLY = 4
+	PROP_FLAG_WRITEONLY = 4,
+	PROP_FLAG_INVERTED = 8, /* only valid with PROP_FLAG_BOOLEAN */
 };
 
 
@@ -84,7 +87,7 @@ typedef struct _param
 	const char *prop_name;	/* property name */
 	const int prop_format;	/* property format */
 	const int prop_offset;	/* offset (index) into the property values */
-	const int prop_extra;   /* extra number of items after first one */
+	const int arg_count;   /* extra number of items after first one */
 	const unsigned int prop_flags;
 	void (*set_func)(Display *dpy, XDevice *dev, struct _param *param, int argc, char **argv); /* handler function, if appropriate */
 	void (*get_func)(Display *dpy, XDevice *dev, struct _param *param, int argc, char **argv); /* handler function for getting, if appropriate */
@@ -94,13 +97,12 @@ typedef struct _param
 	enum printformat printformat;
 } param_t;
 
+
 /* get_func/set_func calls for special parameters */
-static void map_button(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
-static void map_wheels(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv);
+static void map_actions(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void set_mode(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void get_mode(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
-static void get_presscurve(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
-static void get_button(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
+static void get_map(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void set_rotate(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void get_rotate(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void set_xydefault(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
@@ -108,306 +110,106 @@ static void get_all(Display *dpy, XDevice *dev, param_t *param, int argc, char *
 static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 static void set_output(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv);
 
+/* NOTE: When removing or changing a parameter name, add to
+ * deprecated_parameters.
+ */
 static param_t parameters[] =
 {
 	{
-		.name = "TopX",
-		.desc = "Bounding rect left coordinate in tablet units. ",
+		.name = "Area",
+		.desc = "Valid tablet area in device coordinates. ",
 		.prop_name = WACOM_PROP_TABLET_AREA,
 		.prop_format = 32,
 		.prop_offset = 0,
+		.arg_count = 4,
 	},
 	{
-		.name = "TopY",
-		.desc = "Bounding rect top coordinate in tablet units . ",
-		.prop_name = WACOM_PROP_TABLET_AREA,
-		.prop_format = 32,
-		.prop_offset = 1,
+		.name = "Button",
+		.desc = "X11 event to which the given button should be mapped. ",
+		.prop_name = WACOM_PROP_BUTTON_ACTIONS,
+		.arg_count = 1,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
-		.name = "BottomX",
-		.desc = "Bounding rect right coordinate in tablet units. ",
-		.prop_name = WACOM_PROP_TABLET_AREA,
-		.prop_format = 32,
-		.prop_offset = 2,
-	},
-	{
-		.name = "BottomY",
-		.desc = "Bounding rect bottom coordinate in tablet units. ",
-		.prop_name = WACOM_PROP_TABLET_AREA,
-		.prop_format = 32,
-		.prop_offset = 3,
-	},
-	{
-		.name = "Button1",
-		.desc = "X11 event to which button 1 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button2",
-		.desc = "X11 event to which button 2 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button3",
-		.desc = "X11 event to which button 3 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button4",
-		.desc = "X11 event to which button 4 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button5",
-		.desc = "X11 event to which button 5 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button6",
-		.desc = "X11 event to which button 6 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button7",
-		.desc = "X11 event to which button 7 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button8",
-		.desc = "X11 event to which button 8 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button9",
-		.desc = "X11 event to which button 9 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button10",
-		.desc = "X11 event to which button 10 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button11",
-		.desc = "X11 event to which button 11 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button12",
-		.desc = "X11 event to which button 12 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button13",
-		.desc = "X11 event to which button 13 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button14",
-		.desc = "X11 event to which button 14 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button15",
-		.desc = "X11 event to which button 15 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button16",
-		.desc = "X11 event to which button 16 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button17",
-		.desc = "X11 event to which button 17 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button18",
-		.desc = "X11 event to which button 18 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button19",
-		.desc = "X11 event to which button 19 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button20",
-		.desc = "X11 event to which button 20 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button21",
-		.desc = "X11 event to which button 21 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button22",
-		.desc = "X11 event to which button 22 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button23",
-		.desc = "X11 event to which button 23 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button24",
-		.desc = "X11 event to which button 24 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button25",
-		.desc = "X11 event to which button 25 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button26",
-		.desc = "X11 event to which button 26 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button27",
-		.desc = "X11 event to which button 27 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button28",
-		.desc = "X11 event to which button 28 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button29",
-		.desc = "X11 event to which button 29 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button30",
-		.desc = "X11 event to which button 30 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button31",
-		.desc = "X11 event to which button 31 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "Button32",
-		.desc = "X11 event to which button 32 should be mapped. ",
-		.set_func = map_button,
-		.get_func = get_button,
-	},
-	{
-		.name = "DebugLevel",
-		.desc = "Level of debugging trace for individual devices, "
-		"default is 0 (off). ",
+		.name = "ToolDebugLevel",
+		.desc = "Level of debugging trace for individual tools "
+		"(default is 0 [off]). ",
 		.prop_name = WACOM_PROP_DEBUGLEVELS,
 		.prop_format = 8,
 		.prop_offset = 0,
+		.arg_count = 1,
 	},
 	{
-		.name = "CommonDBG",
-		.desc = "Level of debugging statements applied to all devices "
-		"associated with the same tablet. default is 0 (off). ",
+		.name = "TabletDebugLevel",
+		.desc = "Level of debugging statements applied to shared "
+		"code paths between all tools "
+		"associated with the same tablet (default is 0 [off]). ",
 		.prop_name = WACOM_PROP_DEBUGLEVELS,
 		.prop_format = 8,
 		.prop_offset = 1,
+		.arg_count = 1,
 	},
 	{
 		.name = "Suppress",
-		.desc = "Number of points trimmed, default is 2. ",
+		.desc = "Number of points trimmed (default is 2). ",
 		.prop_name = WACOM_PROP_SAMPLE,
 		.prop_format = 32,
-		.prop_offset = 1,
+		.prop_offset = 0,
+		.arg_count = 1,
 	},
 	{
 		.name = "RawSample",
-		.desc = "Number of raw data used to filter the points, "
-		"default is 4. ",
+		.desc = "Number of raw data used to filter the points "
+		"(default is 4). ",
 		.prop_name = WACOM_PROP_SAMPLE,
 		.prop_format = 32,
-		.prop_offset = 0,
+		.prop_offset = 1,
+		.arg_count = 1,
 	},
 	{
-		.name = "Screen_No",
-		.desc = "Sets/gets screen number the tablet is mapped to, "
-		"default is -1. ",
-		.prop_name = WACOM_PROP_DISPLAY_OPTS,
-		.prop_format = 8,
-		.prop_offset = 0,
-	},
-	{
-		.name = "PressCurve",
-		.desc = "Bezier curve for pressure (default is 0 0 100 100). ",
+		.name = "PressureCurve",
+		.desc = "Bezier curve for pressure (default is 0 0 100 100 [linear]). ",
 		.prop_name = WACOM_PROP_PRESSURECURVE,
 		.prop_format = 32,
 		.prop_offset = 0,
-		.get_func = get_presscurve,
+		.arg_count = 4,
 	},
 	{
 		.name = "Mode",
-		.desc = "Switches cursor movement mode (default is absolute/on). ",
+		.desc = "Switches cursor movement mode (default is absolute). ",
+		.arg_count = 1,
 		.set_func = set_mode,
 		.get_func = get_mode,
 	},
 	{
-		.name = "TPCButton",
-		.desc = "Turns on/off Tablet PC buttons. "
-		"default is off for regular tablets, "
-		"on for Tablet PC. ",
+		.name = "TabletPCButton",
+		.desc = "Turns on/off Tablet PC buttons "
+		"(default is off for regular tablets, "
+		"on for Tablet PC). ",
 		.prop_name = WACOM_PROP_HOVER,
 		.prop_format = 8,
 		.prop_offset = 0,
-		.prop_flags = PROP_FLAG_BOOLEAN
+		.arg_count = 1,
+		.prop_flags = PROP_FLAG_BOOLEAN | PROP_FLAG_INVERTED
 	},
 	{
 		.name = "Touch",
-		.desc = "Turns on/off Touch events (default is enable/on). ",
+		.desc = "Turns on/off Touch events (default is on). ",
 		.prop_name = WACOM_PROP_TOUCH,
 		.prop_format = 8,
 		.prop_offset = 0,
+		.arg_count = 1,
 		.prop_flags = PROP_FLAG_BOOLEAN
 	},
 	{
 		.name = "Gesture",
 		.desc = "Turns on/off multi-touch gesture events "
-		"(default is enable/on). ",
+		"(default is on). ",
 		.prop_name = WACOM_PROP_ENABLE_GESTURE,
 		.prop_format = 8,
 		.prop_offset = 0,
+		.arg_count = 1,
 		.prop_flags = PROP_FLAG_BOOLEAN
 	},
 	{
@@ -417,6 +219,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_GESTURE_PARAMETERS,
 		.prop_format = 32,
 		.prop_offset = 0,
+		.arg_count = 1,
 	},
 	{
 		.name = "ScrollDistance",
@@ -425,6 +228,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_GESTURE_PARAMETERS,
 		.prop_format = 32,
 		.prop_offset = 1,
+		.arg_count = 1,
 	},
 	{
 		.name = "TapTime",
@@ -433,130 +237,135 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_GESTURE_PARAMETERS,
 		.prop_format = 32,
 		.prop_offset = 2,
+		.arg_count = 1,
 	},
 	{
 		.name = "Capacity",
-		.desc = "Touch sensitivity level (default is 3, "
-		"-1 for none capacitive tools).",
+		.desc = "Touch sensitivity level (default is 3 for capacitive tools, "
+		"-1 for others). ",
 		.prop_name = WACOM_PROP_CAPACITY,
 		.prop_format = 32,
 		.prop_offset = 0,
+		.arg_count = 1,
 	},
 	{
-		.name = "CursorProx",
+		.name = "CursorProximity",
 		.desc = "Sets cursor distance for proximity-out "
-		"in distance from the tablet.  "
+		"in distance from the tablet "
 		"(default is 10 for Intuos series, "
-		"42 for Graphire series).",
+		"42 for Graphire series). ",
 		.prop_name = WACOM_PROP_PROXIMITY_THRESHOLD,
 		.prop_format = 32,
 		.prop_offset = 0,
+		.arg_count = 1,
 	},
 	{
 		.name = "Rotate",
 		.desc = "Sets the rotation of the tablet. "
-		"Values = NONE, CW, CCW, HALF (default is NONE).",
+		"Values = none, cw, ccw, half (default is none). ",
 		.prop_name = WACOM_PROP_ROTATION,
 		.set_func = set_rotate,
 		.get_func = get_rotate,
+		.arg_count = 1,
 	},
 	{
-		.name = "RelWUp",
+		.name = "RelWheelUp",
 		.desc = "X11 event to which relative wheel up should be mapped. ",
 		.prop_name = WACOM_PROP_WHEELBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 0,
-		.set_func = map_wheels,
+		.arg_count = 0,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
-		.name = "RelWDn",
+		.name = "RelWheelDown",
 		.desc = "X11 event to which relative wheel down should be mapped. ",
 		.prop_name = WACOM_PROP_WHEELBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 1,
-		.set_func = map_wheels,
+		.arg_count = 0,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
-		.name = "AbsWUp",
+		.name = "AbsWheelUp",
 		.desc = "X11 event to which absolute wheel up should be mapped. ",
 		.prop_name = WACOM_PROP_WHEELBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 2,
-		.set_func = map_wheels,
+		.arg_count = 0,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
-		.name = "AbsWDn",
+		.name = "AbsWheelDown",
 		.desc = "X11 event to which absolute wheel down should be mapped. ",
 		.prop_name = WACOM_PROP_WHEELBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 3,
-		.set_func = map_wheels,
+		.arg_count = 0,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
-		.name = "StripLUp",
+		.name = "StripLeftUp",
 		.desc = "X11 event to which left strip up should be mapped. ",
 		.prop_name = WACOM_PROP_STRIPBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 0,
-		.set_func = map_wheels,
+		.arg_count = 0,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
-		.name = "StripLDn",
+		.name = "StripLeftDown",
 		.desc = "X11 event to which left strip down should be mapped. ",
 		.prop_name = WACOM_PROP_STRIPBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 1,
-		.set_func = map_wheels,
+		.arg_count = 0,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
-		.name = "StripRUp",
+		.name = "StripRightUp",
 		.desc = "X11 event to which right strip up should be mapped. ",
 		.prop_name = WACOM_PROP_STRIPBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 2,
-		.set_func = map_wheels,
+		.arg_count = 0,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
-		.name = "StripRDn",
+		.name = "StripRightDown",
 		.desc = "X11 event to which right strip down should be mapped. ",
 		.prop_name = WACOM_PROP_STRIPBUTTONS,
 		.prop_format = 8,
 		.prop_offset = 3,
-		.set_func = map_wheels,
-	},
-	{
-		.name = "RawFilter",
-		.desc = "Enables and disables filtering of raw data, "
-		"default is true/on.",
-		.prop_name = WACOM_PROP_SAMPLE,
-		.prop_format = 8,
-		.prop_offset = 0,
-		.prop_flags = PROP_FLAG_BOOLEAN
+		.arg_count = 0,
+		.set_func = map_actions,
+		.get_func = get_map,
 	},
 	{
 		.name = "Threshold",
 		.desc = "Sets tip/eraser pressure threshold "
-		"(default is 27)",
+		"(default is 27). ",
 		.prop_name = WACOM_PROP_PRESSURE_THRESHOLD,
 		.prop_format = 32,
 		.prop_offset = 0,
+		.arg_count = 1,
 	},
 	{
-		.name = "xyDefault",
+		.name = "ResetArea",
 		.desc = "Resets the bounding coordinates to default in tablet units. ",
 		.prop_name = WACOM_PROP_TABLET_AREA,
 		.prop_format = 32,
 		.prop_offset = 0,
+		.arg_count = 0,
 		.prop_flags = PROP_FLAG_WRITEONLY,
 		.set_func = set_xydefault,
-	},
-	{
-		.name = "mmonitor",
-		.desc = "Turns on/off across monitor movement in "
-		"multi-monitor desktop, default is on ",
-		.prop_name = WACOM_PROP_DISPLAY_OPTS,
-		.prop_format = 8,
-		.prop_offset = 2,
 	},
 	{
 		.name = "ToolID",
@@ -583,27 +392,81 @@ static param_t parameters[] =
 		.prop_flags = PROP_FLAG_READONLY
 	},
 	{
-		.name = "GetTabletID",
-		.desc = "Returns the tablet ID of the associated device. ",
-		.prop_name = WACOM_PROP_SERIALIDS,
-		.prop_format = 32,
-		.prop_offset = 0,
-		.prop_flags = PROP_FLAG_READONLY
-	},
-	{
 		.name = "MapToOutput",
 		.desc = "Map the device to the given output. ",
 		.set_func = set_output,
+		.arg_count = 1,
 		.prop_flags = PROP_FLAG_WRITEONLY
 	},
 	{
 		.name = "all",
-		.desc = "Get value for all parameters.",
+		.desc = "Get value for all parameters. ",
 		.get_func = get_all,
 		.prop_flags = PROP_FLAG_READONLY,
 	},
 	{ NULL }
 };
+
+/**
+ * Deprecated parameters and their respective replacements.
+ */
+struct deprecated
+{
+	const char *name;
+	const char *replacement;
+} deprecated_parameters[] =
+{
+	{"Button",	"Button"}, /* this covers Button1-32 */
+	{"TopX",	"Area"},
+	{"TopY",	"Area"},
+	{"BottomX",	"Area"},
+	{"BottomY",	"Area"},
+	{"GetTabletID", "TabletID"},
+	{"DebugLevel",	"ToolDebugLevel"},
+	{"CommonDBG",	"TabletDebugLevel"},
+	{"GetTabletID",	"TabletID"},
+	{"PressCurve",	"PressureCurve"},
+	{"TPCButton",	"TabletPCButton"},
+	{"CursorProx",	"CursorProximity"},
+	{"xyDefault",	"ResetArea"},
+	{"ClickForce",	"Threshold"},
+	{"RawFilter",   NULL},
+	{NULL,		NULL}
+};
+
+/**
+ * Check if name is deprecated and print out a warning if it is.
+ *
+ * @return True if deprecated, False otherwise.
+ */
+static Bool
+is_deprecated_parameter(const char *name)
+{
+	struct deprecated *d;
+	Bool is_deprecated = False;
+
+	/* all others */
+	for (d = deprecated_parameters; d->name; d++)
+	{
+		if (strncmp(name, d->name, strlen(d->name)) == 0)
+		{
+			is_deprecated = True;
+			break;
+		}
+	}
+
+	if (is_deprecated)
+	{
+		printf("Parameter '%s' is no longer in use. ", name);
+		if (d->replacement != NULL)
+			printf("It was replaced with '%s'.\n", d->replacement);
+		else
+			printf("Its use has been deprecated.\n");
+	}
+
+	return is_deprecated;
+
+}
 
 struct modifier {
 	char *name;
@@ -663,6 +526,8 @@ static struct modifier specialkeys[] = {
 
 	{"tab", "Tab"},
 
+	{"PgUp", "Prior"}, {"PgDn", "Next"},
+
 	{ NULL, NULL }
 };
 
@@ -710,7 +575,7 @@ static void usage(void)
 	" -h, --help                 - usage\n"
 	" -v, --verbose              - verbose output\n"
 	" -V, --version              - version info\n"
-	" -d, --display \"display\"  - override default display\n"
+	" -d, --display \"display\"    - override default display\n"
 	" -s, --shell                - generate shell commands for 'get'\n"
 	" -x, --xconf                - generate xorg.conf lines for 'get'\n");
 
@@ -933,51 +798,48 @@ static void list(Display *dpy, int argc, char **argv)
 	else
 		printf("unknown argument to list.\n");
 }
-/*
+
+/**
  * Convert a list of random special keys to strings that can be passed into
  * XStringToKeysym
+ * @param special A special key, e.g. a modifier or one of the keys in
+ * specialkeys.
+ * @return The X Keysym representing specialkey.
  */
-static char *convert_specialkey(const char *modifier)
+static char *convert_specialkey(const char *specialkey)
 {
 	struct modifier *m = modifiers;
 
-	while(m->name && strcasecmp(modifier, m->name))
+	while(m->name && strcasecmp(specialkey, m->name))
 		m++;
 
 	if (!m->name)
 	{
 		m = specialkeys;
-		while(m->name && strcasecmp(modifier, m->name))
+		while(m->name && strcasecmp(specialkey, m->name))
 			m++;
 	}
 
-	return m->converted ? m->converted : (char*)modifier;
+	return m->converted ? m->converted : (char*)specialkey;
 }
 
-static int is_modifier(const char* modifier)
+/**
+ * @param keysym An X Keysym
+ * @return nonzero if the given keysym is a modifier (as per the modifiers
+ * list) or zero otherwise.
+ */
+static int is_modifier(const char* keysym)
 {
-	const char *modifiers[] = {
-		"Control_L",
-		"Control_R",
-		"Alt_L",
-		"Alt_R",
-		"Shift_L",
-		"Shift_R",
-		"Meta_L",
-		"Meta_R",
-		NULL,
-	};
+	struct modifier *m = modifiers;
 
-	const char **m = modifiers;
-
-	while(*m)
+	while(m->name)
 	{
-		if (strcmp(modifier, *m) == 0)
-			return 1;
+		if (strcmp(keysym, m->converted) == 0)
+			break;
 		m++;
 	}
 
-	return 0;
+	return (m->name != NULL);
 }
 
 static int special_map_keystrokes(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long* data);
@@ -1099,14 +961,12 @@ static int keysym_to_keycode(Display *dpy, KeySym sym)
 {
 	static XkbDescPtr xkb = NULL;
 	XkbStateRec state;
-	int group;
 	int kc = 0;
 
 
 	if (!xkb)
 		xkb = XkbGetKeyboard(dpy, XkbAllComponentsMask, XkbUseCoreKbd);
 	XkbGetState(dpy, XkbUseCoreKbd, &state);
-	group = state.group;
 
 	for (kc = xkb->min_key_code; kc <= xkb->max_key_code; kc++)
 	{
@@ -1232,128 +1092,52 @@ static char** strjoinsplit(int argc, char **argv, int *nwords)
 	return words;
 }
 
-static int get_button_number_from_string(const char* string)
-{
-	int slen = strlen("Button");
-	if (slen >= strlen(string) || strncasecmp(string, "Button", slen))
-		return -1;
-	return atoi(&string[strlen("Button")]);
-}
-
-static const char *wheel_act_prop[] = {
-	"Wacom Rel Wheel Up Action",
-	"Wacom Rel Wheel Down Action",
-	"Wacom Abs Wheel Up Action",
-	"Wacom Abs Wheel Down Action",
-};
-
 /**
- * Convert the given property from an 8 bit integer property into an action
- * atom property. In the default case, this means that a property with
- * values "4 5 4 5" ends up to have the values
- * "Wacom RHU Action" "Wacom RHW Action" "Wacom AWU Action" "Wacom AWD
- * Action"
- * with each of the properties having :
- * AC_BUTTON | AC_KEYBTNPRESS | 4 (or 5)
- * AC_BUTTON | 4 (or 5)
+ * This function parses the given strings to produce a list of actions that
+ * the driver can carry out. We first combine the strings and then split
+ * on spaces to produce a wordlist. Begining with the first word, we let each
+ * registered keyword parser try to parse the string; if one succeeds in
+ * parsing a portion, we jump ahead to the first word it could not parse
+ * and repeat the process. Each parser builds up the list of actions with
+ * those commands it can interpret.
  *
- * return 0 on success or 1 on failure.
+ * @param dpy   X11 display to query
+ * @param argc  Length of argv
+ * @param argv  String data to be parsed
+ * @param data  Parsed action data
+ * @return 'true' if the whole string was parsed sucessfully, else 'false'
  */
-static int convert_wheel_prop(Display *dpy, XDevice *dev, Atom btnact_prop)
+static Bool parse_actions(Display *dpy, int argc, char **argv, unsigned long* data, unsigned long *nitems)
 {
-	int i;
-	Atom type;
-	int format;
-	unsigned long btnact_nitems, bytes_after;
-	unsigned char *btnact_data; /* current values (button mappings) */
-	unsigned long *btnact_new_data; /* new values (action atoms) */
-
-	XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
-				AnyPropertyType, &type, &format, &btnact_nitems,
-				&bytes_after, (unsigned char**)&btnact_data);
-
-	btnact_new_data = calloc(btnact_nitems, sizeof(Atom));
-	if (!btnact_new_data)
-		return 1;
-
-	for (i = 0; i < btnact_nitems; i++) {
-		unsigned long action_data[2];
-		Atom prop = XInternAtom(dpy, wheel_act_prop[i], False);
-
-		action_data[0] = AC_BUTTON | AC_KEYBTNPRESS | btnact_data[i];
-		action_data[1] = AC_BUTTON | btnact_data[i];
-
-		XChangeDeviceProperty(dpy, dev, prop, XA_INTEGER, 32,
-				      PropModeReplace,
-				      (unsigned char*)action_data, 2);
-
-		btnact_new_data[i] = prop;
-	}
-
-	XChangeDeviceProperty(dpy, dev, btnact_prop, XA_ATOM, 32,
-				PropModeReplace,
-				(unsigned char*)btnact_new_data, btnact_nitems);
-	return 0;
-}
-
-
-static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, int offset, int argc, char **argv)
-{
-	unsigned long *data, *btnact_data;
-	Atom type, prop = 0;
-	int format;
-	unsigned long btnact_nitems, nitems, bytes_after;
-	int need_update = 0;
-	int i;
-	int nwords = 0;
+	int  i = 0;
+	int  nwords = 0;
 	char **words = NULL;
-
-	XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
-				AnyPropertyType, &type, &format, &btnact_nitems,
-				&bytes_after, (unsigned char**)&btnact_data);
-
-	if (offset > btnact_nitems)
-		return;
-
-	/* Prop is currently 8 bit integer, i.e. plain button
-	 * mappings. Convert to 32 bit Atom actions first.
-	 */
-	if (format == 8 && type == XA_INTEGER)
-	{
-		if (convert_wheel_prop(dpy, dev, btnact_prop))
-			return;
-
-		XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
-				   AnyPropertyType, &type, &format,
-				   &btnact_nitems, &bytes_after,
-				   (unsigned char**)&btnact_data);
-	}
-
-	if (argc == 0) /* unset property */
-	{
-		prop = btnact_data[offset];
-		btnact_data[offset] = 0;
-	} else if (btnact_data[offset])
-		/* some atom already assigned, modify that */
-		prop = btnact_data[offset];
-	else
-	{
-		char buff[64];
-		sprintf(buff, "Wacom button action %d", (offset + 1));
-		prop = XInternAtom(dpy, buff, False);
-
-		btnact_data[offset] = prop;
-		need_update = 1;
-	}
-
-	data = calloc(sizeof(long), 256);
-	nitems = 0;
 
 	/* translate cmdline commands */
 	words = strjoinsplit(argc, argv, &nwords);
+
+	if (nwords==1 && sscanf(words[0], "%d", &i) == 1)
+	{ /* Mangle "simple" button maps into proper actions */
+		char **new_words = realloc(words, 2);
+		if (new_words == NULL)
+		{
+			fprintf(stderr, "Unable to reallocate memory.\n");
+			return False;
+		}
+
+		sprintf(new_words[0], "+%d", i);
+		new_words[1] = new_words[0];
+		new_words[0] = "button";
+
+		words  = new_words;
+		nwords = 2;
+	}
+
 	for (i = 0; i < nwords; i++)
 	{
 		int j = 0;
+		int keyword_found = 0;
+
 		while (keywords[j].keyword && i < nwords)
 		{
 			int parsed = 0;
@@ -1361,130 +1145,164 @@ static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, i
 			{
 				parsed = keywords[j].func(dpy, nwords - i - 1,
 							  &words[i + 1],
-							  &nitems, data);
+							  nitems, data);
 				i += parsed;
+				keyword_found = 1;
 			}
 			if (parsed)
 				j = parsed = 0; /* restart with first keyword */
 			else
 				j++;
 		}
+
+		if (!keyword_found)
+		{
+			fprintf(stderr, "Cannot parse keyword '%s' at position %d\n", words[i], i+1);
+			return False;
+		}
 	}
 
-	if (argc > 0) /* unset property */
+	free(words);
+
+	return True;
+}
+
+/**
+ * Maps sub-properties (e.g. the 3rd button in WACOM_PROP_BUTTON_ACTIONS)
+ * to actions. This function leverages the several available parsing
+ * functions to convert plain-text descriptions into a list of actions
+ * the driver can understand.
+ *
+ * Once we have a list of actions, we can store it in the appropriate
+ * child property. If none exists, we must first create one and update
+ * the parent list. If we want no action to occur, we can delete the
+ * child property and have the parent point to '0' instead.
+ *
+ * @param  dpy         X display we want to query
+ * @param  dev         X device we want to modify
+ * @param  btnact_prop Parent property
+ * @param  offset      Offset into the parent's list of child properties
+ * @param  argc        Number of command line arguments we've been passed
+ * @param  argv        Command line arguments we need to parse
+ */
+static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, int offset, int argc, char **argv)
+{
+	unsigned long *data, *btnact_data;
+	Atom type, prop = 0;
+	int format;
+	unsigned long btnact_nitems, bytes_after;
+	unsigned long nitems = 0;
+
+	data = calloc(256, sizeof(long));
+	if (!parse_actions(dpy, argc, argv, data, &nitems))
+		return;
+
+	/* obtain the button actions Atom */
+	XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
+				AnyPropertyType, &type, &format, &btnact_nitems,
+				&bytes_after, (unsigned char**)&btnact_data);
+
+	if (offset > btnact_nitems)
+	{
+		fprintf(stderr, "Invalid offset into %s property.\n", XGetAtomName(dpy, btnact_prop));
+		return;
+	}
+
+	if (format != 32 || type != XA_ATOM)
+	{
+		fprintf(stderr, "Property '%s' in an unexpected format. This is a bug.\n",
+		        XGetAtomName(dpy, btnact_prop));
+		return;
+	}
+
+	/* set or unset the property */
+	prop = btnact_data[offset];
+	if (nitems > 0)
+	{ /* Setting a new or existing property */
+		if (!prop)
+		{
+			char buff[64];
+			sprintf(buff, "Wacom button action %d", (offset + 1));
+			prop = XInternAtom(dpy, buff, False);
+			btnact_data[offset] = prop;
+		}
+
+		/* FIXME: the property containing the key sequence must be
+		 * set before updating the button action properties */
 		XChangeDeviceProperty(dpy, dev, prop, XA_INTEGER, 32,
 					PropModeReplace,
 					(unsigned char*)data, nitems);
 
-	XChangeDeviceProperty(dpy, dev, btnact_prop, XA_ATOM, 32,
-				PropModeReplace,
-				(unsigned char*)btnact_data,
-				btnact_nitems);
+		XChangeDeviceProperty(dpy, dev, btnact_prop, XA_ATOM, 32,
+						PropModeReplace,
+						(unsigned char*)btnact_data,
+						btnact_nitems);
+	}
+	else if (prop)
+	{ /* Unsetting a property that exists */
+		btnact_data[offset] = 0;
 
-	if (argc == 0 && prop)
+		XChangeDeviceProperty(dpy, dev, btnact_prop, XA_ATOM, 32,
+					PropModeReplace,
+					(unsigned char*)btnact_data,
+					btnact_nitems);
+
 		XDeleteDeviceProperty(dpy, dev, prop);
-
-	XFlush(dpy);
-}
-
-
-static void special_map_wheels(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
-{
-	Atom wheel_prop;
-
-	wheel_prop = XInternAtom(dpy, param->prop_name, True);
-	if (!wheel_prop)
-		return;
-
-	TRACE("Wheel property %s (%ld)\n", param->prop_name, wheel_prop);
-
-	special_map_property(dpy, dev, wheel_prop, param->prop_offset, argc, argv);
-}
-
-static void map_wheels(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
-{
-	if (argc <= 0)
-		return;
-
-	TRACE("Mapping wheel %s for device %ld.\n", param->name, dev->device_id);
-
-	/* FIXME:
-	   if value is simple number, change back to 8 bit integer
-	 */
-
-	special_map_wheels(dpy, dev, param, argc, argv);
-}
-
-/* Handles complex button mappings through button actions. */
-static void special_map_buttons(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
-{
-	Atom btnact_prop;
-	int slen = strlen("Button");
-	int btn_no;
-
-	TRACE("Special %s map for device %ld.\n", param->name, dev->device_id);
-
-	if (slen >= strlen(param->name) || strncmp(param->name, "Button", slen))
-		return;
-
-	btnact_prop = XInternAtom(dpy, "Wacom Button Actions", True);
-	if (!btnact_prop)
-		return;
-
-	btn_no = get_button_number_from_string(param->name);
-	btn_no--; /* property is zero-indexed, button numbers are 1-indexed */
-
-	special_map_property(dpy, dev, btnact_prop, btn_no, argc, argv);
-}
-
-
-static void map_button_simple(Display *dpy, XDevice *dev, param_t* param, int button)
-{
-	int nmap = 256;
-	unsigned char map[nmap];
-	int btn_no = 0;
-
-	btn_no = get_button_number_from_string(param->name);
-	if (btn_no == -1)
-		return;
-
-	nmap = XGetDeviceButtonMapping(dpy, dev, map, nmap);
-	if (btn_no > nmap)
-	{
-		fprintf(stderr, "Button number does not exist on device.\n");
-		return;
 	}
 
-	TRACE("Mapping button %d to %d.\n", btn_no, button);
-
-	map[btn_no - 1] = button;
-	XSetDeviceButtonMapping(dpy, dev, map, nmap);
 	XFlush(dpy);
-
-	/* If there's a property set, unset it */
-	special_map_buttons(dpy, dev, param, 0, NULL);
 }
-/*
-   Supports two variations, simple mapping and special mapping:
-   xsetwacom set device Button1 1
-	- maps button 1 to logical button 1
-   xsetwacom set device Button1 "key a b c d"
-	- maps button 1 to key events a b c d
- */
-static void map_button(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
-{
-	int button;
 
-	if (argc <= 0)
-		return;
+/**
+ * Maps "actions" to certain properties. Actions allow for complex tasks to
+ * be performed when the driver recieves certain events. For example you
+ * could have an action of "key +alt f2" to open the run-application dialog
+ * in Gnome, or "button 4 4 4 4 4" to have applications scroll by 5 lines
+ * instead of 1.
+ *
+ * Buttons, wheels, and strips all support actions. Note that button actions
+ * require the button to modify as the first argument to this function.
+ *
+ * @param dpy   X11 display to query
+ * @param dev   Device to modify
+ * @param param Info about parameter to modify
+ * @param argc  Dize of argv
+ * @param argv  Arguments to parse
+ */
+static void map_actions(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
+{
+	Atom action_prop;
+	int offset = param->prop_offset;
 
 	TRACE("Mapping %s for device %ld.\n", param->name, dev->device_id);
 
-	/* --set "device" Button1 3 */
-	if (sscanf(argv[0], "%d", &button) == 1)
-		map_button_simple(dpy, dev, param, button);
-	else
-		special_map_buttons(dpy, dev, param, argc, argv);
+	action_prop = XInternAtom(dpy, param->prop_name, True);
+	if (!action_prop)
+	{
+		fprintf(stderr, "Unable to locate property '%s'\n", param->prop_name);
+		return;
+	}
+
+	if (argc < param->arg_count)
+	{
+		fprintf(stderr, "Too few arguments provided.\n");
+		return;
+	}
+
+	if (strcmp(param->prop_name, WACOM_PROP_BUTTON_ACTIONS) == 0)
+	{
+		if (sscanf(argv[0], "%d", &offset) != 1)
+		{
+			fprintf(stderr, "'%s' is not a valid button number.\n", argv[0]);
+			return;
+		}
+
+		offset--;        /* Property is 0-indexed, X buttons are 1-indexed */
+		argc--;          /* Trim off the target button argument */
+		argv = &argv[1]; /* ... ditto ... */
+	}
+
+	special_map_property(dpy, dev, action_prop, offset, argc, argv);
 }
 
 static void set_xydefault(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
@@ -1494,6 +1312,13 @@ static void set_xydefault(Display *dpy, XDevice *dev, param_t* param, int argc, 
 	unsigned char* data = NULL;
 	unsigned long nitems, bytes_after;
 	long *ldata;
+
+	if (argc != param->arg_count)
+	{
+		fprintf(stderr, "'%s' requires exactly %d value(s).\n", param->name,
+			param->arg_count);
+		return;
+	}
 
 	prop = XInternAtom(dpy, param->prop_name, True);
 	if (!prop)
@@ -1528,9 +1353,11 @@ out:
 static void set_mode(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
 {
 	int mode = Absolute;
-	if (argc < 1)
+
+	if (argc != param->arg_count)
 	{
-		usage();
+		fprintf(stderr, "'%s' requires exactly %d value(s).\n", param->name,
+			param->arg_count);
 		return;
 	}
 
@@ -1559,24 +1386,28 @@ static void set_rotate(Display *dpy, XDevice *dev, param_t* param, int argc, cha
 	unsigned char* data;
 	unsigned long nitems, bytes_after;
 
-	if (argc != 1)
-		goto error;
+	if (argc != param->arg_count)
+	{
+		fprintf(stderr, "'%s' requires exactly %d value(s).\n", param->name,
+			param->arg_count);
+		return;
+	}
 
 	TRACE("Rotate '%s' for device %ld.\n", argv[0], dev->device_id);
 
-	if (strcasecmp(argv[0], "CW") == 0)
+	if (strcasecmp(argv[0], "cw") == 0 || strcasecmp(argv[0], "1") == 0)
 		rotation = 1;
-	else if (strcasecmp(argv[0], "CCW") == 0)
+	else if (strcasecmp(argv[0], "ccw") == 0 || strcasecmp(argv[0], "2") == 0)
 		rotation = 2;
-	else if (strcasecmp(argv[0], "HALF") == 0)
+	else if (strcasecmp(argv[0], "half") == 0 || strcasecmp(argv[0], "3") == 0)
 		rotation = 3;
-	else if (strcasecmp(argv[0], "NONE") == 0)
+	else if (strcasecmp(argv[0], "none") == 0 || strcasecmp(argv[0], "0") == 0)
 		rotation = 0;
-	else if (strlen(argv[0]) == 1)
+	else
 	{
-		rotation = atoi(argv[0]);
-		if (rotation < 0 || rotation > 3)
-			goto error;
+		fprintf(stderr, "'%s' is not a valid value for the '%s' property.\n",
+		        argv[0], param->name);
+		return;
 	}
 
 	prop = XInternAtom(dpy, param->prop_name, True);
@@ -1603,24 +1434,47 @@ static void set_rotate(Display *dpy, XDevice *dev, param_t* param, int argc, cha
 	XFlush(dpy);
 
 	return;
-
-error:
-	fprintf(stderr, "Usage: xsetwacom <device name> Rotate [NONE | CW | CCW | HALF]\n");
-	return;
 }
 
-static int convert_value_from_user(param_t *param, char *value)
+
+/**
+ * Performs intelligent string->int conversion. In addition to converting strings
+ * of digits into their corresponding integer values, it converts special string
+ * constants such as "off" or "false" (0) and "on" or "true" (1).
+ *
+ * The caller is expected to allocate and free memory for return_value.
+ *
+ * @param      param        the property paramaters
+ * @param      value        the string to be converted
+ * @param[out] return_value the integer representation of the 'value' parameter
+ * @return TRUE if the conversion succeeded, FALSE otherwise
+ */
+static Bool convert_value_from_user(const param_t *param, const char *value, int *return_value)
 {
-	int val;
+	if (param->prop_flags & PROP_FLAG_BOOLEAN)
+	{
+		if (strcasecmp(value, "off") == 0 || strcasecmp(value, "false") == 0)
+			*return_value = 0;
+		else if (strcasecmp(value, "on") == 0 || strcasecmp(value, "true") == 0)
+			*return_value = 1;
+		else
+			return False;
 
-	if ((param->prop_flags & PROP_FLAG_BOOLEAN) && strcmp(value, "off") == 0)
-			val = 0;
-	else if ((param->prop_flags & PROP_FLAG_BOOLEAN) && strcmp(value, "on") == 0)
-			val = 1;
+		if (param->prop_flags & PROP_FLAG_INVERTED)
+			*return_value = !(*return_value);
+	}
 	else
-		val = atoi(value);
+	{
+		char *end;
+		long conversion = strtol(value, &end, 10);
+		if (end == value || *end != '\0' || errno == ERANGE ||
+		    conversion < INT_MIN || conversion > INT_MAX)
+			return False;
 
-	return val;
+		*return_value = (int)conversion;
+	}
+
+	return True;
 }
 
 static void set(Display *dpy, int argc, char **argv)
@@ -1631,14 +1485,13 @@ static void set(Display *dpy, int argc, char **argv)
 	int format;
 	unsigned char* data = NULL;
 	unsigned long nitems, bytes_after;
-	double val;
 	long *n;
 	char *b;
 	int i;
 	char **values;
 	int nvals;
 
-	if (argc < 3)
+	if (argc < 2)
 	{
 		usage();
 		return;
@@ -1656,6 +1509,8 @@ static void set(Display *dpy, int argc, char **argv)
 	param = find_parameter(argv[1]);
 	if (!param)
 	{
+		if (is_deprecated_parameter(argv[1]))
+			goto out;
 		printf("Unknown parameter name '%s'.\n", argv[1]);
 		goto out;
 	} else if (param->prop_flags & PROP_FLAG_READONLY)
@@ -1692,9 +1547,25 @@ static void set(Display *dpy, int argc, char **argv)
 
 	values = strjoinsplit(argc - 2, &argv[2], &nvals);
 
+	if (nvals != param->arg_count)
+	{
+		fprintf(stderr, "'%s' requires exactly %d value(s).\n", param->name,
+			param->arg_count);
+		goto out;
+	}
+
 	for (i = 0; i < nvals; i++)
 	{
-		val = convert_value_from_user(param, values[i]);
+		Bool success;
+		int val;
+
+		success = convert_value_from_user(param, values[i], &val);
+		if (!success)
+		{
+			fprintf(stderr, "'%s' is not a valid value for the '%s' property.\n",
+				values[i], param->name);
+			goto out;
+		}
 
 		switch(param->prop_format)
 		{
@@ -1746,7 +1617,10 @@ static void get_mode(Display *dpy, XDevice *dev, param_t* param, int argc, char 
 	}
 
 	if (!ndevices) /* device id 0 is reserved and can't be our device */
+	{
+		fprintf(stderr, "Unable to locate device.\n");
 		return;
+	}
 
 	TRACE("Getting mode for device %ld.\n", dev->device_id);
 
@@ -1772,6 +1646,12 @@ static void get_rotate(Display *dpy, XDevice *dev, param_t* param, int argc, cha
 	unsigned char* data;
 	unsigned long nitems, bytes_after;
 
+	if (argc != 0)
+	{
+		fprintf(stderr, "Incorrect number of arguments supplied.\n");
+		return;
+	}
+
 	prop = XInternAtom(dpy, param->prop_name, True);
 	if (!prop)
 	{
@@ -1795,16 +1675,16 @@ static void get_rotate(Display *dpy, XDevice *dev, param_t* param, int argc, cha
 	switch(*data)
 	{
 		case 0:
-			rotation = "NONE";
+			rotation = "none";
 			break;
 		case 1:
-			rotation = "CW";
+			rotation = "cw";
 			break;
 		case 2:
-			rotation = "CCW";
+			rotation = "ccw";
 			break;
 		case 3:
-			rotation = "HALF";
+			rotation = "half";
 			break;
 	}
 
@@ -1813,85 +1693,57 @@ static void get_rotate(Display *dpy, XDevice *dev, param_t* param, int argc, cha
 	return;
 }
 
-static void get_presscurve(Display *dpy, XDevice *dev, param_t *param, int argc,
-				char **argv)
+/**
+ * Try to print the value of the action mapped to the given parameter's
+ * property. If the property contains data in the wrong format/type then
+ * nothing will be printed.
+ *
+ * @param dpy    X11 display to connect to
+ * @param dev    Device to query
+ * @param param  Info about parameter to query
+ * @param offset Offset into property specified in param
+ * @return       0 on failure, 1 otherwise
+ */
+static int get_actions(Display *dpy, XDevice *dev,
+				  param_t *param, int offset)
 {
 	Atom prop, type;
-	int format, i;
-	unsigned char* data;
-	unsigned long nitems, bytes_after;
-	char buff[256] = {0};
-	long *ldata;
-
-	prop = XInternAtom(dpy, param->prop_name, True);
-	if (!prop)
-	{
-		fprintf(stderr, "Property for '%s' not available.\n",
-			param->name);
-		return;
-	}
-
-	TRACE("Getting pressure curve for device %ld.\n", dev->device_id);
-
-	XGetDeviceProperty(dpy, dev, prop, 0, 1000, False, AnyPropertyType,
-				&type, &format, &nitems, &bytes_after, &data);
-
-	if (param->prop_format != 32)
-		return;
-
-	ldata = (long*)data;
-	if (nitems)
-		sprintf(buff, "%ld", ldata[param->prop_offset]);
-	for (i = 1; i < nitems; i++)
-		sprintf(&buff[strlen(buff)], " %ld", ldata[param->prop_offset + i]);
-
-	print_value(param, "%s", buff);
-}
-
-static int get_special_button_map(Display *dpy, XDevice *dev,
-				  param_t *param, int btn_no)
-{
-	Atom btnact_prop, action_prop;
-	unsigned long *btnact_data;
-	Atom type;
 	int format;
-	unsigned long btnact_nitems, bytes_after;
+	unsigned long nitems, bytes_after, *data;
 	int i;
 	char buff[1024] = {0};
 
-	btnact_prop = XInternAtom(dpy, "Wacom Button Actions", True);
+	prop = XInternAtom(dpy, param->prop_name, True);
 
-	if (!btnact_prop)
+	if (!prop)
 		return 0;
 
-	XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
-			   AnyPropertyType, &type, &format, &btnact_nitems,
-			   &bytes_after, (unsigned char**)&btnact_data);
+	XGetDeviceProperty(dpy, dev, prop, 0, 100, False,
+			   AnyPropertyType, &type, &format, &nitems,
+			   &bytes_after, (unsigned char**)&data);
 
-	/* button numbers start at 1, property is zero-indexed */
-	if (btn_no >= btnact_nitems)
-		return 0;
-
-	/* FIXME: doesn't cover wheels/strips at the moment, they can be 8
-	 * bits (plain buttons) or 32 bits (complex actions) */
-
-	action_prop = btnact_data[btn_no - 1];
-	if (!action_prop)
-		return 0;
-
-	XFree(btnact_data);
-
-	XGetDeviceProperty(dpy, dev, action_prop, 0, 100, False,
-			   AnyPropertyType, &type, &format, &btnact_nitems,
-			   &bytes_after, (unsigned char**)&btnact_data);
-
-	if (format != 32 && type != XA_ATOM)
-		return 0;
-
-	for (i = 0; i < btnact_nitems; i++)
+	if (offset >= nitems)
 	{
-		static int last_type, last_press;
-		unsigned long action = btnact_data[i];
+		XFree(data);
+		return 0;
+	}
+
+	prop = data[offset];
+	XFree(data);
+
+	if (format != 32 || type != XA_ATOM || !prop)
+	{
+		return 0;
+	}
+
+	XGetDeviceProperty(dpy, dev, prop, 0, 100, False,
+		   AnyPropertyType, &type, &format, &nitems,
+		   &bytes_after, (unsigned char**)&data);
+
+	for (i = 0; i < nitems; i++)
+	{
+		static int last_type;
+		unsigned long action = data[i];
 		int current_type;
 		int detail;
 		int is_press = -1;
@@ -1934,47 +1786,123 @@ static int get_special_button_map(Display *dpy, XDevice *dev,
 			sprintf(str, "%c%d ", press_str, detail);
 		strcat(buff, str);
 		last_type = current_type;
-		last_press = is_press;
 	}
 
 	TRACE("%s\n", buff);
 
-	XFree(btnact_data);
+	XFree(data);
 
 	print_value(param, "%s", buff);
 
 	return 1;
 }
 
-static void get_button(Display *dpy, XDevice *dev, param_t *param, int argc,
-			char **argv)
+/**
+ * Try to print the value of the raw button mapped to the given parameter's
+ * property. If the property contains data in the wrong format/type then
+ * nothing will be printed.
+ *
+ * @param dpy    X11 display to connect to
+ * @param dev    Device to query
+ * @param param  Info about parameter to query
+ * @param offset Offset into the property specified in param
+ * @return       0 on failure, 1 otherwise
+ */
+static int get_button(Display *dpy, XDevice *dev, param_t *param, int offset)
 {
-	int nmap = 256;
-	unsigned char map[nmap];
-	int btn_no = 0;
+	Atom prop, type;
+	int format;
+	unsigned long nitems, bytes_after;
+	unsigned char *data;
 
-	btn_no = get_button_number_from_string(param->name);
-	if (btn_no == -1)
-		return;
+	prop = XInternAtom(dpy, param->prop_name, True);
+
+	if (!prop)
+		return 0;
+
+	XGetDeviceProperty(dpy, dev, prop, 0, 100, False,
+			   AnyPropertyType, &type, &format, &nitems,
+			   &bytes_after, (unsigned char**)&data);
+
+	if (offset >= nitems)
+	{
+		XFree(data);
+		return 0;
+	}
+
+	prop = data[offset];
+	XFree(data);
+
+	if (format != 8 || type != XA_INTEGER || !prop)
+	{
+		return 0;
+	}
+
+	print_value(param, "%d", prop);
+
+	return 1;
+}
+
+/**
+ * Print the current button/wheel/strip mapping, be it a raw button or
+ * an action. Button map requests require the button number as the first
+ * argument in argv.
+ *
+ * @param dpy   X11 display to connect to
+ * @param dev   Device to query
+ * @param param Info about parameter to query
+ * @param argc  Length of argv
+ * @param argv  Command-line arguments
+ */
+static void get_map(Display *dpy, XDevice *dev, param_t *param, int argc, char** argv)
+{
+	int offset = param->prop_offset;
 
 	TRACE("Getting button map for device %ld.\n", dev->device_id);
 
-	/* if there's a special map, print it and return */
-	if (get_special_button_map(dpy, dev, param, btn_no))
-		return;
-
-	nmap = XGetDeviceButtonMapping(dpy, dev, map, nmap);
-
-	if (btn_no > nmap)
+	if (argc != param->arg_count)
 	{
-		fprintf(stderr, "Button number does not exist on device.\n");
+		fprintf(stderr, "'%s' requires exactly %d value(s).\n", param->name,
+		        param->arg_count);
 		return;
 	}
 
-	print_value(param, "%d", map[btn_no - 1]);
+	if (strcmp(param->prop_name, WACOM_PROP_BUTTON_ACTIONS) == 0)
+	{
+		if (sscanf(argv[0], "%d", &offset) != 1)
+		{
+			fprintf(stderr, "'%s' is not a valid button number.\n", argv[0]);
+			return;
+		}
 
-	XSetDeviceButtonMapping(dpy, dev, map, nmap);
-	XFlush(dpy);
+		offset--;        /* Property is 0-indexed, X buttons are 1-indexed */
+		argc--;          /* Trim off the target button argument */
+		argv = &argv[1]; /*... ditto ...                        */
+	}
+
+
+	if (get_actions(dpy, dev, param, offset))
+		return;
+	else if (get_button(dpy, dev, param, offset))
+		return;
+	else
+	{
+		int nmap = 256;
+		unsigned char map[nmap];
+
+		nmap = XGetDeviceButtonMapping(dpy, dev, map, nmap);
+
+		if (offset >= nmap)
+		{
+			fprintf(stderr, "Button number does not exist on device.\n");
+			return;
+		}
+
+		print_value(param, "%d", map[offset]);
+
+		XSetDeviceButtonMapping(dpy, dev, map, nmap);
+		XFlush(dpy);
+	}
 }
 
 static void _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
@@ -2003,7 +1931,11 @@ static void _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
 				&bytes_after, (unsigned char**)&data);
 
 	if (format != 32 || type != XInternAtom(dpy, "FLOAT", True))
+	{
+		fprintf(stderr, "Property for '%s' has unexpected type - this is a bug.\n",
+			"Coordinate Transformation Matrix");
 		return;
+	}
 
 	XChangeDeviceProperty(dpy, dev, matrix_prop, type, format,
 			      PropModeReplace, (unsigned char*)matrix, 9);
@@ -2019,6 +1951,13 @@ static void set_output(Display *dpy, XDevice *dev, param_t *param, int argc, cha
 	XRRScreenResources *res;
 	XRROutputInfo *output_info;
 	XRRCrtcInfo *crtc_info;
+
+	if (argc != param->arg_count)
+	{
+		fprintf(stderr, "'%s' requires exactly %d value(s).\n", param->name,
+			param->arg_count);
+		return;
+	}
 
 	output_name = argv[0];
 
@@ -2136,6 +2075,8 @@ static void get(Display *dpy, enum printformat printformat, int argc, char **arg
 	param = find_parameter(argv[1]);
 	if (!param)
 	{
+		if (is_deprecated_parameter(argv[1]))
+			return;
 		printf("Unknown parameter name '%s'.\n", argv[1]);
 		return;
 	} else if (param->prop_flags & PROP_FLAG_WRITEONLY)
@@ -2192,7 +2133,7 @@ static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char
 	switch(param->prop_format)
 	{
 		case 8:
-			for (i = 0; i < 1 + param->prop_extra; i++)
+			for (i = 0; i < param->arg_count; i++)
 			{
 				int val = data[param->prop_offset + i];
 
@@ -2201,18 +2142,18 @@ static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char
 				else
 					sprintf(&str[strlen(str)], "%d", val);
 
-				if (i < param->prop_extra)
+				if (i < param->arg_count - 1)
 					strcat(str, " ");
 			}
 			print_value(param, "%s", str);
 			break;
 		case 32:
-			for (i = 0; i < 1 + param->prop_extra; i++)
+			for (i = 0; i < param->arg_count; i++)
 			{
 				long *ldata = (long*)data;
 				sprintf(&str[strlen(str)], "%ld", ldata[param->prop_offset + i]);
 
-				if (i < param->prop_extra)
+				if (i < param->arg_count - 1)
 					strcat(str, " ");
 			}
 			print_value(param, "%s", str);
@@ -2221,6 +2162,7 @@ static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char
 }
 
 
+#ifndef BUILD_TEST
 int main (int argc, char **argv)
 {
 	int c;
@@ -2285,7 +2227,7 @@ int main (int argc, char **argv)
 				break;
 			case 'V':
 				version();
-				break;
+				return 0;
 			case 'h':
 			default:
 				usage();
@@ -2335,6 +2277,161 @@ int main (int argc, char **argv)
 	XCloseDisplay(dpy);
 	return 0;
 }
+#endif
+
+#ifdef BUILD_TEST
+#include <assert.h>
+/**
+ * Below are unit-tests to ensure xsetwacom continues to work as expected.
+ */
+
+static void test_is_modifier(void)
+{
+	char i;
+	char buff[5];
 
 
+	assert(is_modifier("Control_L"));
+	assert(is_modifier("Control_R"));
+	assert(is_modifier("Alt_L"));
+	assert(is_modifier("Alt_R"));
+	assert(is_modifier("Shift_L"));
+	assert(is_modifier("Shift_R"));
+	assert(is_modifier("Meta_L"));
+	assert(is_modifier("Meta_R"));
+	assert(is_modifier("Super_L"));
+	assert(is_modifier("Super_R"));
+	assert(is_modifier("Hyper_L"));
+	assert(is_modifier("Hyper_R"));
+
+	assert(!is_modifier(""));
+
+	/* make sure at least the default keys (ascii 33 - 126) aren't
+	 * modifiers */
+	for (i = '!'; i <= '~'; i++)
+	{
+		sprintf(buff, "%c", i);
+		assert(!is_modifier(buff));
+	}
+}
+
+static void test_convert_specialkey(void)
+{
+	char i;
+	char *converted;
+	char buff[5];
+	struct modifier *m;
+
+	/* make sure at least the default keys (ascii 33 - 126) aren't
+	 * specialkeys */
+	for (i = '!'; i <= '~'; i++)
+	{
+		sprintf(buff, "%c", i);
+		converted = convert_specialkey(buff);
+		assert(strcmp(converted, buff) == 0);
+	}
+
+	for (m = specialkeys; m->name; m++)
+	{
+		converted = convert_specialkey(m->name);
+		assert(strcmp(converted, m->converted) == 0);
+	}
+}
+
+static void test_parameter_number(void)
+{
+	/* If either of those two fails, a parameter was added or removed.
+	 * This test simply exists so that we remember to properly
+	 * deprecated them.
+	 * Numbers include trailing NULL entry.
+	 */
+	assert(ArrayLength(parameters) == 33);
+	assert(ArrayLength(deprecated_parameters) == 16);
+}
+
+/**
+ * For the given parameter, test all words against conversion success and
+ * expected value.
+ *
+ * @param param The parameter of type PROP_FLAG_BOOLEAN.
+ * @param words NULL-terminated word list to parse
+ * @param success True if conversion success for the words is expected or
+ * False overwise
+ * @param expected Expected converted value. If success is False, this value
+ * is omitted.
+ */
+static void _test_conversion(const param_t *param, const char **words,
+			     Bool success, Bool expected)
+{
+
+	assert(param->prop_flags & PROP_FLAG_BOOLEAN);
+
+	while(*words)
+	{
+		int val;
+		int rc;
+		rc = convert_value_from_user(param, *words, &val);
+		assert(rc == success);
+		if (success)
+			assert(val == expected);
+		words++;
+	}
+}
+
+static void test_convert_value_from_user(void)
+{
+	param_t test_nonbool =
+	{
+		.name = "Test",
+		.desc = "NOT A REAL PARAMETER",
+		.prop_flags = 0,
+	};
+
+	param_t test_bool =
+	{
+		.name = "Test",
+		.desc = "NOT A REAL PARAMETER",
+		.prop_flags = PROP_FLAG_BOOLEAN,
+	};
+
+	param_t test_bool_inverted =
+	{
+		.name = "Test",
+		.desc = "NOT A REAL PARAMETER",
+		.prop_flags = PROP_FLAG_BOOLEAN | PROP_FLAG_INVERTED,
+	};
+
+	const char *bool_true[] = { "true", "TRUE", "True", "On", "on", "ON", NULL };
+	const char *bool_false[] = { "false", "FALSE", "False", "Off", "off", "OFF", NULL };
+	const char *bool_garbage[] = { "0", "1", " on", "on ", " off", " off", NULL};
+
+	int val;
+
+	assert(convert_value_from_user(&test_nonbool, "1", &val) == True);
+	assert(convert_value_from_user(&test_nonbool, "-8", &val) == True);
+	assert(convert_value_from_user(&test_nonbool, "+314", &val) == True);
+	assert(convert_value_from_user(&test_nonbool, "36893488147419103232", &val) == False); //2^65 > MAX_INT
+	assert(convert_value_from_user(&test_nonbool, "123abc", &val) == False);
+	assert(convert_value_from_user(&test_nonbool, "123 abc", &val) == False);
+
+	_test_conversion(&test_bool, bool_true, True, True);
+	_test_conversion(&test_bool, bool_false, True, False);
+	_test_conversion(&test_bool, bool_garbage, False, False);
+
+	_test_conversion(&test_bool_inverted, bool_true, True, False);
+	_test_conversion(&test_bool_inverted, bool_false, True, True);
+	_test_conversion(&test_bool_inverted, bool_garbage, False, False);
+}
+
+
+int main(int argc, char** argv)
+{
+	test_parameter_number();
+	test_is_modifier();
+	test_convert_specialkey();
+	test_convert_value_from_user();
+	return 0;
+}
+
+#endif
 /* vim: set noexpandtab tabstop=8 shiftwidth=8: */

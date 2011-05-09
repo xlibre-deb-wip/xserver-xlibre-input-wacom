@@ -38,6 +38,12 @@
 #include <xf86Xinput.h>
 #include <mipointer.h>
 #include <X11/Xatom.h>
+/*****************************************************************************
+ * Unit test hack
+ ****************************************************************************/
+#ifdef DISABLE_STATIC
+#define static
+#endif
 
 /******************************************************************************
  * Debugging support
@@ -59,12 +65,6 @@
 #else
 #define DBG(lvl, priv, ...)
 #endif
-
-/*****************************************************************************
- * General Macros
- ****************************************************************************/
-
-#define ABS(x) ((x) > 0 ? (x) : -(x))
 
 /******************************************************************************
  * WacomModule - all globals are packed in a single structure to keep the
@@ -137,10 +137,12 @@ extern int wcmDeviceTypeKeys(InputInfoPtr pInfo);
 
 /* hotplug */
 extern int wcmNeedAutoHotplug(InputInfoPtr pInfo, const char **type);
+extern void wcmHotplugSerials(InputInfoPtr pInfo, const char *basename);
 extern void wcmHotplugOthers(InputInfoPtr pInfo, const char *basename);
 
 /* setup */
-extern int wcmParseOptions(InputInfoPtr pInfo, int hotplugged);
+extern Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent);
+extern int wcmParseSerials(InputInfoPtr pinfo);
 extern void wcmInitialCoordinates(InputInfoPtr pInfo, int axes);
 extern void wcmInitialScreens(InputInfoPtr pInfo);
 extern void wcmInitialScreens(InputInfoPtr pInfo);
@@ -150,7 +152,7 @@ extern int wcmDevSwitchMode(ClientPtr client, DeviceIntPtr dev, int mode);
 
 /* run-time modifications */
 extern void wcmChangeScreen(InputInfoPtr pInfo, int value);
-extern void wcmTilt2R(WacomDeviceStatePtr ds);
+extern int wcmTilt2R(int x, int y, double offset);
 extern void wcmGestureFilter(WacomDevicePtr priv, int channel);
 extern void wcmEmitKeycode(DeviceIntPtr keydev, int keycode, int state);
 extern void wcmSoftOutEvent(InputInfoPtr pInfo);
@@ -167,6 +169,7 @@ extern int wcmGetPhyDeviceID(WacomDevicePtr priv);
 extern int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop, BOOL checkonly);
 extern int wcmDeleteProperty(DeviceIntPtr dev, Atom property);
 extern void InitWcmDeviceProperties(InputInfoPtr pInfo);
+extern void wcmUpdateRotationProperty(WacomDevicePtr priv);
 
 /* Utility functions */
 extern Bool is_absolute(InputInfoPtr pInfo);
@@ -174,6 +177,12 @@ extern void set_absolute(InputInfoPtr pInfo, Bool absolute);
 extern WacomCommonPtr wcmRefCommon(WacomCommonPtr common);
 extern void wcmFreeCommon(WacomCommonPtr *common);
 extern WacomCommonPtr wcmNewCommon(void);
+
+enum WacomSuppressMode {
+	SUPPRESS_NONE = 8,	/* Process event normally */
+	SUPPRESS_ALL,		/* Supress and discard the whole event */
+	SUPPRESS_NON_MOTION	/* Supress all events but x/y motion */
+};
 
 /****************************************************************************/
 #endif /* __XF86WACOM_H */
