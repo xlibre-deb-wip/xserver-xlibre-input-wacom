@@ -2,7 +2,7 @@ Source: xf86-input-wacom
 Section: x11
 Priority: optional
 Maintainer: Ron Lee <ron@debian.org>
-Build-Depends: debhelper (>= 6.0.7), pkg-config, xutils-dev,
+Build-Depends: debhelper (>= 6.0.7), pkg-config, libudev-dev, xutils-dev,
                xserver-xorg-dev (>= 2:1.9.4), libxi-dev, libxrandr-dev
 Standards-Version: 3.9.1.0
 Homepage: http://linuxwacom.sf.net
