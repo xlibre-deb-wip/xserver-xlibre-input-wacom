@@ -1,6 +1,22 @@
+xf86-input-wacom (0.12.0-1) unstable; urgency=low
+
+  * Adds support for many new devices, and better support for finger input.
+    Closes: #649266   Possibly Closes: #641954
+  * Restores support for WALTOP, the kernel patches are mainlined now.
+  * Support for input ABI 14.
+  * Fixes for key device handling.  Closes: #632117
+    Probably Closes: #639384, #617860, #617870
+    Possibly Closes: #632416
+  * Many fixes for twinview and rotation.
+    Possibly Closes: #483494, #526050, #626248
+    Please reopen with updated information if not.
+  * Add libx11 and libxinerama Build-Deps.
+
+ -- Ron Lee <ron@debian.org>  Tue, 22 Nov 2011 07:17:17 +1030
+
 xf86-input-wacom (0.11.0+20110419-1) unstable; urgency=low
 
-  * New upstream snapshot.
+  * New upstream snapshot.  Add libudev Build-Dep.
 
  -- Ron Lee <ron@debian.org>  Mon, 09 May 2011 21:50:28 +0930
 
