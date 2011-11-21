@@ -23,9 +23,8 @@
 #include <xorg-server.h>
 #include <xorgVersion.h>
 
+#include <wacom-util.h>
 #include "Xwacom.h"
-
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
 /* max number of input events to read in one read call */
 #define MAX_EVENTS 50
@@ -137,7 +136,6 @@ extern int wcmDeviceTypeKeys(InputInfoPtr pInfo);
 
 /* hotplug */
 extern int wcmNeedAutoHotplug(InputInfoPtr pInfo, const char **type);
-extern void wcmHotplugSerials(InputInfoPtr pInfo, const char *basename);
 extern void wcmHotplugOthers(InputInfoPtr pInfo, const char *basename);
 
 /* setup */
@@ -167,9 +165,11 @@ extern int wcmGetPhyDeviceID(WacomDevicePtr priv);
 
 /* device properties */
 extern int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop, BOOL checkonly);
+extern int wcmGetProperty(DeviceIntPtr dev, Atom property);
 extern int wcmDeleteProperty(DeviceIntPtr dev, Atom property);
 extern void InitWcmDeviceProperties(InputInfoPtr pInfo);
 extern void wcmUpdateRotationProperty(WacomDevicePtr priv);
+extern void wcmUpdateSerial(InputInfoPtr pInfo, unsigned int serial);
 
 /* Utility functions */
 extern Bool is_absolute(InputInfoPtr pInfo);

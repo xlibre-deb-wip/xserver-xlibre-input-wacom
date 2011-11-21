@@ -33,8 +33,12 @@
 /* 32 bit, 4 values */
 #define WACOM_PROP_PRESSURECURVE "Wacom Pressurecurve"
 
-/* 32 bit, 4 values, tablet id, old serial, old device id, serial */
+/* CARD32, 4 values, tablet id, old serial, old hw device id, current serial
+   read-only */
 #define WACOM_PROP_SERIALIDS "Wacom Serial IDs"
+
+/* CARD32, 1 value */
+#define WACOM_PROP_SERIAL_BIND "Wacom Serial ID binding"
 
 /* 8 bit, 4 values, left up, left down, right up, right down
    OR
@@ -42,13 +46,13 @@
   */
 #define WACOM_PROP_STRIPBUTTONS "Wacom Strip Buttons"
 
-/* 8 bit, 4 values, up, down, wheel up, wheel down
+/* 8 bit, 4 values, rel wheel up, rel wheel down, abs wheel up, abs wheel down
    OR
-   Atom, 4 values , up, down, wheel up, wheel down
+   Atom, 4 values , rel wheel up, rel wheel down, abs wheel up, abs wheel down
  */
 #define WACOM_PROP_WHEELBUTTONS "Wacom Wheel Buttons"
 
-/* 32 bit, 4 values */
+/* DEPRECATED, DO NOT USE */
 #define WACOM_PROP_TWINVIEW_RES "Wacom TwinView Resolution"
 
 /* DEPRECATED. DO NOT USE */
@@ -60,7 +64,7 @@
 /* 32 bit, 1 value */
 #define WACOM_PROP_PROXIMITY_THRESHOLD "Wacom Proximity Threshold"
 
-/* 32 bit, 1 value */
+/* DEPRECATED. DO NOT USE */
 #define WACOM_PROP_CAPACITY "Wacom Capacity"
 
 /* 32 bit, 1 value */

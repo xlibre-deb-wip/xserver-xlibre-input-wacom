@@ -139,7 +139,10 @@ Bool wcmIsAValidType(InputInfoPtr pInfo, const char* type)
 	char* dsource = xf86CheckStrOption(pInfo->options, "_source", "");
 
 	if (!type)
+	{
+		xf86Msg(X_ERROR, "%s: No type specified\n", pInfo->name);
 		return FALSE;
+	}
 
 	/* walkthrough all types */
 	for (j = 0; j < ARRAY_SIZE(wcmType); j++)
@@ -169,6 +172,11 @@ Bool wcmIsAValidType(InputInfoPtr pInfo, const char* type)
 			}
 		}
 	}
+
+	if (!ret)
+		xf86Msg(X_ERROR, "%s: Invalid type '%s' for this device.\n",
+			pInfo->name, type);
+
 	return ret;
 }
 
@@ -183,23 +191,19 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 
 	switch (priv->common->tablet_id)
 	{
-		case 0xCC:  /* CintiqV5 */
-			priv->common->tablet_type = WCM_LCD;
-			/* fall through */
-
 		case 0xB8:  /* I4 */
 		case 0xB9:  /* I4 */
 		case 0xBA:  /* I4 */
 		case 0xBB:  /* I4 */
 		case 0xBC:  /* I4 */
 		case 0xBD:  /* I4 */
-			priv->common->tablet_type = WCM_ROTATION;
+			TabletSetFeature(priv->common, WCM_ROTATION);
 			/* fall through */
 
 		/* tablets with touch ring */
 		case 0x17:  /* BambooFun */
 		case 0x18:  /* BambooFun */
-			priv->common->tablet_type |= WCM_RING;
+			TabletSetFeature(priv->common, WCM_RING);
 			break;
 
 		/* tablets support dual input */
@@ -214,7 +218,7 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 		case 0x44:  /* I2 */
 		case 0x45:  /* I2 */
 		case 0x47:  /* I2 */
-			priv->common->tablet_type = WCM_DUALINPUT;
+			TabletSetFeature(priv->common, WCM_DUALINPUT);
 			break;
 
 		/* P4 display tablets */
@@ -233,14 +237,15 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 		case 0xC7:  /* DTU1931 */
 		case 0xCE:  /* DTU2231 */
 		case 0xF0:  /* DTU1631 */
-			priv->common->tablet_type |= WCM_LCD;
+			TabletSetFeature(priv->common, WCM_LCD);
 			break;
 
 		/* tablets support menu strips */
 		case 0x3F:  /* CintiqV5 */
 		case 0xC5:  /* CintiqV5 */
 		case 0xC6:  /* CintiqV5 */
-			priv->common->tablet_type = WCM_LCD;
+		case 0xCC:  /* CinitqV5 */
+			TabletSetFeature(priv->common, WCM_LCD);
 			/* fall through */
 		case 0xB0:  /* I3 */
 		case 0xB1:  /* I3 */
@@ -249,34 +254,34 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 		case 0xB4:  /* I3 */
 		case 0xB5:  /* I3 */
 		case 0xB7:  /* I3 */
-			priv->common->tablet_type |= WCM_STRIP | WCM_ROTATION;
+			TabletSetFeature(priv->common, WCM_STRIP | WCM_ROTATION);
 			break;
 
 		case 0xE2: /* TPC with 2FGT */
 		case 0xE3: /* TPC with 2FGT */
-			priv->common->tablet_type = WCM_TPC;
-			priv->common->tablet_type |= WCM_LCD;
+		case 0xE6: /* TPC with 2FGT */
+			TabletSetFeature(priv->common, WCM_TPC);
 			break;
 
 		case 0x93: /* TPC with 1FGT */
 		case 0x9A: /* TPC with 1FGT */
 		case 0x90: /* TPC */
-			priv->common->tablet_type |= WCM_TPC;
-			priv->common->tablet_type |= WCM_LCD;
+		case 0x97: /* TPC */
+			TabletSetFeature(priv->common, WCM_TPC);
 			break;
 
 		case 0x9F:
-			priv->common->tablet_type |= WCM_LCD;
+			TabletSetFeature(priv->common, WCM_LCD);
 			break;
 	}
 
 	if (ISBITSET(common->wcmKeys, BTN_TOOL_PEN))
-		priv->common->tablet_type |= WCM_PEN;
+		TabletSetFeature(priv->common, WCM_PEN);
 
 	if (ISBITSET (common->wcmKeys, BTN_0) ||
 			ISBITSET (common->wcmKeys, BTN_FORWARD))
 	{
-		priv->common->tablet_type |= WCM_PAD;
+		TabletSetFeature(priv->common, WCM_PAD);
 	}
 
 	/* This handles both protocol 4 and 5 meanings of wcmKeys */
@@ -285,9 +290,9 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 		/* TRIPLETAP means 2 finger touch */
 		/* DOUBLETAP without TRIPLETAP means 1 finger touch */
 		if (ISBITSET(common->wcmKeys, BTN_TOOL_TRIPLETAP))
-			priv->common->tablet_type |= WCM_2FGT;
+			TabletSetFeature(priv->common, WCM_2FGT);
 		else if (ISBITSET(common->wcmKeys, BTN_TOOL_DOUBLETAP))
-			priv->common->tablet_type |= WCM_1FGT;
+			TabletSetFeature(priv->common, WCM_1FGT);
 	}
 
 	if (common->wcmProtocolLevel == WCM_PROTOCOL_GENERIC)
@@ -295,24 +300,57 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 		/* DOUBLETAP means 2 finger touch */
 		/* FINGER without DOUBLETAP means 1 finger touch */
 		if (ISBITSET(common->wcmKeys, BTN_TOOL_DOUBLETAP))
-			priv->common->tablet_type |= WCM_2FGT;
+			TabletSetFeature(priv->common, WCM_2FGT);
 		else if (ISBITSET(common->wcmKeys, BTN_TOOL_FINGER))
-			priv->common->tablet_type |= WCM_1FGT;
+			TabletSetFeature(priv->common, WCM_1FGT);
 	}
 
 	return ret;
 }
 
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 14
+static InputOption*
+input_option_new(InputOption *list, char *key, char *value)
+{
+	InputOption *new;
+
+	new = calloc(1, sizeof(InputOption));
+	new->key = key;
+	new->value = value;
+	new->next = list;
+	return new;
+}
+
+static void
+input_option_free_list(InputOption **opts)
+{
+	InputOption *tmp = *opts;
+	while(*opts)
+	{
+		tmp = (*opts)->next;
+		free((*opts)->key);
+		free((*opts)->value);
+		free((*opts));
+		*opts = tmp;
+	}
+}
+#endif
+
 /**
  * Duplicate xf86 options, replace the "type" option with the given type
- * (and the name with "$name $type" and convert them to InputOption */
-static InputOption *wcmOptionDupConvert(InputInfoPtr pInfo, const char* basename, const char *type, int iserial)
+ * (and the name with "$name $type" and convert them to InputOption
+ *
+ * @param basename Kernel device name for this device
+ * @param type Tool type (cursor, eraser, etc.)
+ * @param serial Serial number this device should be bound to (-1 for "any")
+ */
+static InputOption *wcmOptionDupConvert(InputInfoPtr pInfo, const char* basename, const char *type, int serial)
 {
 	WacomDevicePtr priv = pInfo->private;
 	WacomCommonPtr common = priv->common;
 	pointer original = pInfo->options;
 	WacomToolPtr ser = common->serials;
-	InputOption *iopts = NULL, *new;
+	InputOption *iopts = NULL;
 	char *name;
 	pointer options;
 	int rc;
@@ -328,9 +366,9 @@ static InputOption *wcmOptionDupConvert(InputInfoPtr pInfo, const char* basename
 		options = dummy.options;
 	}
 #endif
-	if (iserial > -1)
+	if (serial > -1)
 	{
-		while (ser->serial && ser->serial != iserial)
+		while (ser->serial && ser->serial != serial)
 			ser = ser->next;
 
 		if (strlen(ser->name) > 0)
@@ -347,36 +385,21 @@ static InputOption *wcmOptionDupConvert(InputInfoPtr pInfo, const char* basename
 	options = xf86ReplaceStrOption(options, "Type", type);
 	options = xf86ReplaceStrOption(options, "Name", name);
 
-	if (iserial > -1)
+	if (serial > -1)
 		options = xf86ReplaceIntOption(options, "Serial", ser->serial);
 
 	free(name);
 
 	while(options)
 	{
-		new = calloc(1, sizeof(InputOption));
-
-		new->key = xf86OptionName(options);
-		new->value = xf86OptionValue(options);
-		new->next = iopts;
-		iopts = new;
+		iopts = input_option_new(iopts,
+					 xf86OptionName(options),
+					 xf86OptionValue(options));
 		options = xf86NextOption(options);
 	}
 	return iopts;
 }
 
-static void wcmFreeInputOpts(InputOption* opts)
-{
-	InputOption *tmp = opts;
-	while(opts)
-	{
-		tmp = opts->next;
-		free(opts->key);
-		free(opts->value);
-		free(opts);
-		opts = tmp;
-	}
-}
 
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 11
 /**
@@ -428,7 +451,7 @@ wcmHotplugDevice(ClientPtr client, pointer closure )
 			      hotplug_info->attrs,
 #endif
 			      &dev);
-	wcmFreeInputOpts(hotplug_info->input_options);
+	input_option_free_list(&hotplug_info->input_options);
 
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 11
 	FreeInputAttributes(hotplug_info->attrs);
@@ -452,8 +475,9 @@ wcmHotplugDevice(ClientPtr client, pointer closure )
  * @param pInfo The parent device
  * @param basename The base name for the device (type will be appended)
  * @param type Type name for this tool
+ * @param serial Serial number this device should be bound to (-1 for "any")
  */
-static void wcmQueueHotplug(InputInfoPtr pInfo, const char* basename, const char *type, int iserial)
+static void wcmQueueHotplug(InputInfoPtr pInfo, const char* basename, const char *type, int serial)
 {
 	WacomHotplugInfo *hotplug_info;
 
@@ -465,14 +489,19 @@ static void wcmQueueHotplug(InputInfoPtr pInfo, const char* basename, const char
 		return;
 	}
 
-	hotplug_info->input_options = wcmOptionDupConvert(pInfo, basename, type, iserial);
+	hotplug_info->input_options = wcmOptionDupConvert(pInfo, basename, type, serial);
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 11
 	hotplug_info->attrs = wcmDuplicateAttributes(pInfo, type);
 #endif
 	QueueWorkProc(wcmHotplugDevice, serverClient, hotplug_info);
 }
 
-void wcmHotplugSerials(InputInfoPtr pInfo, const char *basename)
+/**
+ * Hotplug all serial numbers configured on this device.
+ *
+ * @param basename The kernel device name
+ */
+static void wcmHotplugSerials(InputInfoPtr pInfo, const char *basename)
 {
 	WacomDevicePtr  priv = (WacomDevicePtr)pInfo->private;
 	WacomCommonPtr  common = priv->common;
@@ -501,10 +530,9 @@ void wcmHotplugSerials(InputInfoPtr pInfo, const char *basename)
 void wcmHotplugOthers(InputInfoPtr pInfo, const char *basename)
 {
 	int i, skip = 1;
-	char*		device;
 
-        xf86Msg(X_INFO, "%s: hotplugging dependent devices.\n", pInfo->name);
-	device = xf86SetStrOption(pInfo->options, "Device", NULL);
+	xf86Msg(X_INFO, "%s: hotplugging dependent devices.\n", pInfo->name);
+
         /* same loop is used to init the first device, if we get here we
          * need to start at the second one */
 	for (i = 0; i < ARRAY_SIZE(wcmType); i++)
@@ -670,10 +698,6 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 	int		tpc_button_is_on;
 
 	/* Optional configuration */
-	priv->debugLevel = xf86SetIntOption(pInfo->options,
-					    "DebugLevel", priv->debugLevel);
-	common->debugLevel = xf86SetIntOption(pInfo->options,
-					      "CommonDBG", common->debugLevel);
 	s = xf86SetStrOption(pInfo->options, "Mode", NULL);
 
 	if (s && (xf86NameCmp(s, "absolute") == 0))
@@ -707,7 +731,7 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 
 	if (s)
 	{
-		int rotation;
+		int rotation = ROTATE_NONE;
 
 		if (xf86NameCmp(s, "CW") == 0)
 			rotation = ROTATE_CW;
@@ -759,7 +783,7 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 	 * Slightly raised curve might be 0,5,95,100
 	 */
 	s = xf86SetStrOption(pInfo->options, "PressCurve", "0,0,100,100");
-	if (s && (IsStylus(priv) || IsEraser(priv)))
+	if (s && (IsPen(priv) || IsTouch(priv)))
 	{
 		int a,b,c,d;
 		if ((sscanf(s,"%d,%d,%d,%d",&a,&b,&c,&d) != 4) ||
@@ -839,7 +863,7 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 	if (TabletHasFeature(common, WCM_1FGT) ||
 	    TabletHasFeature(common, WCM_2FGT))
 	{
-		int touch_is_on, capacity_is_on;
+		int touch_is_on;
 
 		/* TouchDefault was off for all devices
 		 * except when touch is supported */
@@ -853,15 +877,6 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 		else if (touch_is_on != common->wcmTouch)
 			xf86Msg(X_WARNING, "%s: Touch option can only be set "
 				"by a touch tool.\n", pInfo->name);
-
-		capacity_is_on = xf86SetBoolOption(pInfo->options, "Capacity",
-						   common->wcmCapacityDefault);
-
-		if (is_primary || IsTouch(priv))
-			common->wcmCapacity = capacity_is_on;
-		else if (capacity_is_on != common->wcmCapacity)
-			xf86Msg(X_WARNING, "%s: Touch Capacity option can only be"
-				"set by a touch tool.\n", pInfo->name);
 	}
 
 	/* 2FG touch device */

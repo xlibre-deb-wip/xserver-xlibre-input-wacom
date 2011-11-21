@@ -24,6 +24,16 @@
 #include "xf86Wacom.h"
 #include "wcmFilter.h"
 #include <exevents.h>
+#include <xf86_OSproc.h>
+
+#ifndef XI_PROP_DEVICE_NODE
+#define XI_PROP_DEVICE_NODE "Device Node"
+#endif
+#ifndef XI_PROP_PRODUCT_ID
+#define XI_PROP_PRODUCT_ID "Device Product ID"
+#endif
+
+static void wcmBindToSerial(InputInfoPtr pInfo, unsigned int serial);
 
 /*****************************************************************************
 * wcmDevSwitchModeCall --
@@ -69,15 +79,16 @@ int wcmDevSwitchMode(ClientPtr client, DeviceIntPtr dev, int mode)
 	return wcmDevSwitchModeCall(pInfo, mode);
 }
 
+Atom prop_devnode;
 Atom prop_rotation;
 Atom prop_tablet_area;
 Atom prop_pressurecurve;
 Atom prop_serials;
+Atom prop_serial_binding;
 Atom prop_strip_buttons;
 Atom prop_wheel_buttons;
 Atom prop_tv_resolutions;
 Atom prop_cursorprox;
-Atom prop_capacity;
 Atom prop_threshold;
 Atom prop_suppress;
 Atom prop_touch;
@@ -86,12 +97,28 @@ Atom prop_gesture_param;
 Atom prop_hover;
 Atom prop_tooltype;
 Atom prop_btnactions;
+Atom prop_product_id;
 #ifdef DEBUG
 Atom prop_debuglevels;
 #endif
 
-/* Special case: format -32 means type is XA_ATOM */
-static Atom InitWcmAtom(DeviceIntPtr dev, char *name, int format, int nvalues, int *values)
+/**
+ * Registers a property for the input device. This function registers
+ * the property name atom, as well as creates the property itself.
+ * At creation, the property values are initialized from the 'values'
+ * array. The device property is marked as non-deletable.
+ * Initialization values are always to be provided by means of an
+ * array of 32 bit integers, regardless of 'format'
+ *
+ * @param dev Pointer to device structure
+ * @param name Name of device property
+ * @param type Type of the property
+ * @param format Format of the property (8/16/32)
+ * @param nvalues Number of values in the property
+ * @param values Pointer to 32 bit integer array of initial property values
+ * @return Atom handle of property name
+ */
+static Atom InitWcmAtom(DeviceIntPtr dev, char *name, Atom type, int format, int nvalues, int *values)
 {
 	int i;
 	Atom atom;
@@ -99,13 +126,6 @@ static Atom InitWcmAtom(DeviceIntPtr dev, char *name, int format, int nvalues, i
 	uint16_t val_16[WCM_MAX_MOUSE_BUTTONS];
 	uint32_t val_32[WCM_MAX_MOUSE_BUTTONS];
 	pointer converted = val_32;
-	Atom type = XA_INTEGER;
-
-	if (format == -32)
-	{
-		type = XA_ATOM;
-		format = 32;
-	}
 
 	for (i = 0; i < nvalues; i++)
 	{
@@ -140,84 +160,94 @@ void InitWcmDeviceProperties(InputInfoPtr pInfo)
 
 	DBG(10, priv, "\n");
 
+	prop_devnode = MakeAtom(XI_PROP_DEVICE_NODE, strlen(XI_PROP_DEVICE_NODE), TRUE);
+	XIChangeDeviceProperty(pInfo->dev, prop_devnode, XA_STRING, 8,
+				PropModeReplace, strlen(common->device_path),
+				common->device_path, FALSE);
+	XISetDevicePropertyDeletable(pInfo->dev, prop_devnode, FALSE);
+
 	if (!IsPad(priv)) {
 		values[0] = priv->topX;
 		values[1] = priv->topY;
 		values[2] = priv->bottomX;
 		values[3] = priv->bottomY;
-		prop_tablet_area = InitWcmAtom(pInfo->dev, WACOM_PROP_TABLET_AREA, 32, 4, values);
+		prop_tablet_area = InitWcmAtom(pInfo->dev, WACOM_PROP_TABLET_AREA, XA_INTEGER, 32, 4, values);
 	}
 
 	values[0] = common->wcmRotate;
-	prop_rotation = InitWcmAtom(pInfo->dev, WACOM_PROP_ROTATION, 8, 1, values);
+	prop_rotation = InitWcmAtom(pInfo->dev, WACOM_PROP_ROTATION, XA_INTEGER, 8, 1, values);
 
-	if (IsStylus(priv) || IsEraser(priv)) {
+	if (IsPen(priv) || IsTouch(priv)) {
 		values[0] = priv->nPressCtrl[0];
 		values[1] = priv->nPressCtrl[1];
 		values[2] = priv->nPressCtrl[2];
 		values[3] = priv->nPressCtrl[3];
-		prop_pressurecurve = InitWcmAtom(pInfo->dev, WACOM_PROP_PRESSURECURVE, 32, 4, values);
+		prop_pressurecurve = InitWcmAtom(pInfo->dev, WACOM_PROP_PRESSURECURVE, XA_INTEGER, 32, 4, values);
 	}
 
 	values[0] = common->tablet_id;
 	values[1] = priv->old_serial;
 	values[2] = priv->old_device_id;
-	values[3] = priv->serial;
-	prop_serials = InitWcmAtom(pInfo->dev, WACOM_PROP_SERIALIDS, 32, 4, values);
+	values[3] = priv->cur_serial;
+	prop_serials = InitWcmAtom(pInfo->dev, WACOM_PROP_SERIALIDS, XA_INTEGER, 32, 4, values);
+
+	values[0] = priv->serial;
+	prop_serial_binding = InitWcmAtom(pInfo->dev, WACOM_PROP_SERIAL_BIND, XA_INTEGER, 32, 1, values);
 
 	if (IsCursor(priv)) {
 		values[0] = common->wcmCursorProxoutDist;
-		prop_cursorprox = InitWcmAtom(pInfo->dev, WACOM_PROP_PROXIMITY_THRESHOLD, 32, 1, values);
+		prop_cursorprox = InitWcmAtom(pInfo->dev, WACOM_PROP_PROXIMITY_THRESHOLD, XA_INTEGER, 32, 1, values);
 	}
 
-	values[0] = common->wcmCapacity;
-	prop_capacity = InitWcmAtom(pInfo->dev, WACOM_PROP_CAPACITY, 32, 1, values);
-
 	values[0] = (!common->wcmMaxZ) ? 0 : common->wcmThreshold;
-	prop_threshold = InitWcmAtom(pInfo->dev, WACOM_PROP_PRESSURE_THRESHOLD, 32, 1, values);
+	prop_threshold = InitWcmAtom(pInfo->dev, WACOM_PROP_PRESSURE_THRESHOLD, XA_INTEGER, 32, 1, values);
 
 	values[0] = common->wcmSuppress;
 	values[1] = common->wcmRawSample;
-	prop_suppress = InitWcmAtom(pInfo->dev, WACOM_PROP_SAMPLE, 32, 2, values);
+	prop_suppress = InitWcmAtom(pInfo->dev, WACOM_PROP_SAMPLE, XA_INTEGER, 32, 2, values);
 
 	values[0] = common->wcmTouch;
-	prop_touch = InitWcmAtom(pInfo->dev, WACOM_PROP_TOUCH, 8, 1, values);
+	prop_touch = InitWcmAtom(pInfo->dev, WACOM_PROP_TOUCH, XA_INTEGER, 8, 1, values);
 
 	if (IsStylus(priv)) {
 		values[0] = !common->wcmTPCButton;
-		prop_hover = InitWcmAtom(pInfo->dev, WACOM_PROP_HOVER, 8, 1, values);
+		prop_hover = InitWcmAtom(pInfo->dev, WACOM_PROP_HOVER, XA_INTEGER, 8, 1, values);
 	}
 
 	values[0] = common->wcmGesture;
-	prop_gesture = InitWcmAtom(pInfo->dev, WACOM_PROP_ENABLE_GESTURE, 8, 1, values);
+	prop_gesture = InitWcmAtom(pInfo->dev, WACOM_PROP_ENABLE_GESTURE, XA_INTEGER, 8, 1, values);
 
 	values[0] = common->wcmGestureParameters.wcmZoomDistance;
 	values[1] = common->wcmGestureParameters.wcmScrollDistance;
 	values[2] = common->wcmGestureParameters.wcmTapTime;
-	prop_gesture_param = InitWcmAtom(pInfo->dev, WACOM_PROP_GESTURE_PARAMETERS, 32, 3, values);
+	prop_gesture_param = InitWcmAtom(pInfo->dev, WACOM_PROP_GESTURE_PARAMETERS, XA_INTEGER, 32, 3, values);
 
 	values[0] = MakeAtom(pInfo->type_name, strlen(pInfo->type_name), TRUE);
-	prop_tooltype = InitWcmAtom(pInfo->dev, WACOM_PROP_TOOL_TYPE, -32, 1, values);
+	prop_tooltype = InitWcmAtom(pInfo->dev, WACOM_PROP_TOOL_TYPE, XA_ATOM, 32, 1, values);
 
 	/* default to no actions */
 	memset(values, 0, sizeof(values));
-	prop_btnactions = InitWcmAtom(pInfo->dev, WACOM_PROP_BUTTON_ACTIONS, -32, WCM_MAX_MOUSE_BUTTONS, values);
+	prop_btnactions = InitWcmAtom(pInfo->dev, WACOM_PROP_BUTTON_ACTIONS, XA_ATOM, 32, WCM_MAX_MOUSE_BUTTONS, values);
 
 	if (IsPad(priv)) {
 		memset(values, 0, sizeof(values));
-		prop_strip_buttons = InitWcmAtom(pInfo->dev, WACOM_PROP_STRIPBUTTONS, -32, 4, values);
+		prop_strip_buttons = InitWcmAtom(pInfo->dev, WACOM_PROP_STRIPBUTTONS, XA_ATOM, 32, 4, values);
 	}
 
 	if (IsPad(priv) || IsCursor(priv))
 	{
 		memset(values, 0, sizeof(values));
-		prop_wheel_buttons = InitWcmAtom(pInfo->dev, WACOM_PROP_WHEELBUTTONS, -32, 4, values);
+		prop_wheel_buttons = InitWcmAtom(pInfo->dev, WACOM_PROP_WHEELBUTTONS, XA_ATOM, 32, 4, values);
 	}
+
+	values[0] = common->vendor_id;
+	values[1] = common->tablet_id;
+	prop_product_id = InitWcmAtom(pInfo->dev, XI_PROP_PRODUCT_ID, XA_INTEGER, 32, 2, values);
 
 #ifdef DEBUG
 	values[0] = priv->debugLevel;
 	values[1] = common->debugLevel;
-	prop_debuglevels = InitWcmAtom(pInfo->dev, WACOM_PROP_DEBUGLEVELS, 8, 2, values);
+	prop_debuglevels = InitWcmAtom(pInfo->dev, WACOM_PROP_DEBUGLEVELS, XA_INTEGER, 8, 2, values);
 #endif
 }
 
@@ -590,7 +620,9 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 	DBG(10, priv, "\n");
 
-	if (property == prop_tablet_area)
+	if (property == prop_devnode || property == prop_product_id)
+		return BadValue; /* Read-only */
+	else if (property == prop_tablet_area)
 	{
 		INT32 *values = (INT32*)prop->data;
 
@@ -626,7 +658,7 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 						 pcurve[2], pcurve[3]))
 			return BadValue;
 
-		if (IsCursor(priv) || IsPad (priv) || IsTouch (priv))
+		if (IsCursor(priv) || IsPad (priv))
 			return BadValue;
 
 		if (!checkonly)
@@ -641,7 +673,7 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 		values = (CARD32*)prop->data;
 
-		if ((values[0] < 0) || (values[0] > 100))
+		if (values[0] > 100)
 			return BadValue;
 
 		if ((values[1] < 1) || (values[1] > MAX_SAMPLES))
@@ -668,7 +700,27 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 	} else if (property == prop_serials)
 	{
+		/* This property is read-only but we need to
+		 * set it at runtime. If we get here from wcmUpdateSerial,
+		 * we know the serial has ben set internally already, so we
+		 * can reply with success. */
+		if (prop->size == 4 && prop->format == 32)
+			if (((CARD32*)prop->data)[3] == priv->cur_serial)
+				return Success;
+
 		return BadValue; /* Read-only */
+	} else if (property == prop_serial_binding)
+	{
+		unsigned int serial;
+
+		if (prop->size != 1 || prop->format != 32)
+			return BadValue;
+
+		if (!checkonly)
+		{
+			serial = *(CARD32*)prop->data;
+			wcmBindToSerial(pInfo, serial);
+		}
 	} else if (property == prop_strip_buttons)
 		return wcmSetStripProperty(dev, property, prop, checkonly);
 	else if (property == prop_wheel_buttons)
@@ -690,21 +742,6 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 		if (!checkonly)
 			common->wcmCursorProxoutDist = value;
-	} else if (property == prop_capacity)
-	{
-		INT32 value;
-
-		if (prop->size != 1 || prop->format != 32)
-			return BadValue;
-
-		value = *(INT32*)prop->data;
-
-		if ((value < -1) || (value > 5))
-			return BadValue;
-
-		if (!checkonly)
-			common->wcmCapacity = value;
-
 	} else if (property == prop_threshold)
 	{
 		CARD32 value;
@@ -804,4 +841,89 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 	return Success;
 }
+
+int wcmGetProperty (DeviceIntPtr dev, Atom property)
+{
+	InputInfoPtr pInfo = (InputInfoPtr) dev->public.devicePrivate;
+	WacomDevicePtr priv = (WacomDevicePtr) pInfo->private;
+	WacomCommonPtr common = priv->common;
+
+	DBG(10, priv, "\n");
+
+	if (property == prop_serials)
+	{
+		uint32_t values[4];
+
+		values[0] = common->tablet_id;
+		values[1] = priv->old_serial;
+		values[2] = priv->old_device_id;
+		values[3] = priv->cur_serial;
+
+		DBG(10, priv, "Update to serial: %d\n", priv->old_serial);
+
+		return XIChangeDeviceProperty(dev, property, XA_INTEGER, 32,
+					      PropModeReplace, 4,
+					      values, FALSE);
+	}
+
+	return Success;
+}
+
+static CARD32
+serialTimerFunc(OsTimerPtr timer, CARD32 now, pointer arg)
+{
+	InputInfoPtr pInfo = arg;
+	WacomDevicePtr priv = pInfo->private;
+	XIPropertyValuePtr prop;
+	CARD32 prop_value[4];
+	int sigstate;
+	int rc;
+
+	sigstate = xf86BlockSIGIO();
+
+	rc = XIGetDeviceProperty(pInfo->dev, prop_serials, &prop);
+	if (rc != Success || prop->format != 32 || prop->size != 4)
+	{
+		xf86Msg(X_ERROR, "%s: Failed to update serial number.\n",
+			pInfo->name);
+		return 0;
+	}
+
+	memcpy(prop_value, prop->data, sizeof(prop_value));
+	prop_value[3] = priv->cur_serial;
+
+	XIChangeDeviceProperty(pInfo->dev, prop_serials, XA_INTEGER,
+			       prop->format, PropModeReplace,
+			       prop->size, prop_value, TRUE);
+
+	xf86UnblockSIGIO(sigstate);
+
+	return 0;
+}
+
+void
+wcmUpdateSerial(InputInfoPtr pInfo, unsigned int serial)
+{
+	WacomDevicePtr priv = pInfo->private;
+
+	if (priv->cur_serial == serial)
+		return;
+
+	priv->cur_serial = serial;
+
+	/* This function is called during SIGIO. Schedule timer for property
+	 * event delivery outside of signal handler. */
+	priv->serial_timer = TimerSet(priv->serial_timer, 0 /* reltime */,
+				      1, serialTimerFunc, pInfo);
+}
+
+static void
+wcmBindToSerial(InputInfoPtr pInfo, unsigned int serial)
+{
+	WacomDevicePtr priv = pInfo->private;
+
+	priv->serial = serial;
+
+}
+
 /* vim: set noexpandtab tabstop=8 shiftwidth=8: */

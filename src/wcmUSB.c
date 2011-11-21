@@ -242,6 +242,8 @@ static struct
 
 	{ WACOM_VENDOR_ID, 0x65, 100000, 100000, &usbBamboo     }, /* Bamboo */
 	{ WACOM_VENDOR_ID, 0x69,  39842,  39842, &usbBamboo1    }, /* Bamboo1 */
+	{ WACOM_VENDOR_ID, 0x6A, 100000, 100000, &usbBamboo1    }, /* Bamboo1 4x6 */
+	{ WACOM_VENDOR_ID, 0x6B, 100000, 100000, &usbBamboo1    }, /* Bamboo1 5x8 */
 
 	{ WACOM_VENDOR_ID, 0xB0, 200000, 200000, &usbIntuos3    }, /* Intuos3 4x5 */
 	{ WACOM_VENDOR_ID, 0xB1, 200000, 200000, &usbIntuos3    }, /* Intuos3 6x8 */
@@ -265,6 +267,7 @@ static struct
 
 	{ WACOM_VENDOR_ID, 0x90, 100000, 100000, &usbTabletPC   }, /* TabletPC 0x90 */
 	{ WACOM_VENDOR_ID, 0x93, 100000, 100000, &usbTabletPC   }, /* TabletPC 0x93 */
+	{ WACOM_VENDOR_ID, 0x97, 100000, 100000, &usbTabletPC   }, /* TabletPC 0x97 */
 	{ WACOM_VENDOR_ID, 0x9A, 100000, 100000, &usbTabletPC   }, /* TabletPC 0x9A */
 	{ WACOM_VENDOR_ID, 0x9F, 100000, 100000, &usbTabletPC   }, /* CapPlus  0x9F */
 	{ WACOM_VENDOR_ID, 0xE2, 100000, 100000, &usbTabletPC   }, /* TabletPC 0xE2 */
@@ -629,7 +632,7 @@ static int usbChooseChannel(WacomCommonPtr common)
 	/* figure out the channel to use based on serial number */
 	int i, channel = -1;
 	wcmUSBData* private = common->private;
-	int serial = private->wcmLastToolSerial;
+	unsigned int serial = private->wcmLastToolSerial;
 
 	if (common->wcmProtocolLevel == WCM_PROTOCOL_GENERIC)
 	{
@@ -1028,10 +1031,7 @@ static int usbParseAbsEvent(WacomCommonPtr common,
 			ds->tilty = event->value - common->wcmMaxtiltY/2;
 			break;
 		case ABS_PRESSURE:
-			if (ds->device_type == TOUCH_ID)
-				ds->capacity = event->value;
-			else
-				ds->pressure = event->value;
+			ds->pressure = event->value;
 			break;
 		case ABS_DISTANCE:
 			ds->distance = event->value;
@@ -1110,14 +1110,6 @@ static int usbParseAbsMTEvent(WacomCommonPtr common, struct input_event *event)
 			ds->device_id = TOUCH_DEVICE_ID;
 			ds->serial_num = private->wcmMTChannel+1;
 			ds->sample = (int)GetTimeInMillis();
-
-			/* Send left click down/up for touchscreen
-			 * when the first finger touches/leaves the tablet.
-			 */
-			if (TabletHasFeature(common, WCM_LCD) &&
-					!private->wcmMTChannel)
-				ds->buttons = mod_buttons(ds->buttons, 0,
-							  (event->value != -1));
 			break;
 
 		case ABS_MT_POSITION_X:
@@ -1129,7 +1121,7 @@ static int usbParseAbsMTEvent(WacomCommonPtr common, struct input_event *event)
 			break;
 
 		case ABS_MT_PRESSURE:
-			ds->capacity = event->value;
+			ds->pressure = event->value;
 			break;
 
 		default:
@@ -1223,7 +1215,6 @@ static int usbParseKeyEvent(WacomCommonPtr common,
 					ds->device_type = TOUCH_ID;
 					ds->device_id = TOUCH_DEVICE_ID;
 					ds->proximity = event->value;
-					ds->buttons = mod_buttons(ds->buttons, 0, event->value);
 				}
 			}
 			break;
@@ -1253,18 +1244,6 @@ static int usbParseKeyEvent(WacomCommonPtr common,
 			if ((ds->proximity && !dslast->proximity) ||
 			    (!ds->proximity && dslast->proximity))
 				ds->sample = (int)GetTimeInMillis();
-			/* left button is always pressed for
-			 * touchscreen without capacity
-			 * when the first finger touch event received.
-			 * For touchscreen with capacity, left button
-			 * event will be decided
-			 * in wcmCommon.c by capacity threshold.
-			 * Touchpads should not have button
-			 * press.
-			 */
-			if (common->wcmCapacityDefault < 0 &&
-			    (TabletHasFeature(common, WCM_LCD)))
-				ds->buttons = mod_buttons(ds->buttons, 0, event->value);
 			break;
 
 		case BTN_TOOL_TRIPLETAP:
@@ -1366,10 +1345,12 @@ static int usbParseBTNEvent(WacomCommonPtr common,
  * @param event_ptr A pointer to the USB data packet that contains the
  * events to be processed.
  * @param nevents Number of events in the packet.
+ * @param last_device_type The device type for the last event
  *
- * @return The tool type. 0 if no pen/touch/eraser event code in the event.
+ * @return The tool type. last_device_type if no pen/touch/eraser event code
+ *         in the event, or TOUCH_ID if last_device_type is not a tool.
  */
-static int usbInitToolType(const struct input_event *event_ptr, int nevents)
+static int usbInitToolType(const struct input_event *event_ptr, int nevents, int last_device_type)
 {
 	int i, device_type = 0;
 	struct input_event* event = (struct input_event *)event_ptr;
@@ -1397,6 +1378,14 @@ static int usbInitToolType(const struct input_event *event_ptr, int nevents)
 		}
 
 		event++;
+	}
+
+	if (!device_type)
+	{
+		if (last_device_type)
+			device_type = last_device_type;
+		else
+			device_type = TOUCH_ID;
 	}
 
 	return device_type;
@@ -1433,7 +1422,8 @@ static void usbDispatchEvents(InputInfoPtr pInfo)
 
 	if (private->wcmUseMT)
 		private->wcmDeviceType = usbInitToolType(private->wcmEvents,
-							 private->wcmEventCnt);
+							 private->wcmEventCnt,
+							 dslast.device_type);
 
 	if (private->wcmPenTouch)
 	{
@@ -1613,8 +1603,19 @@ static void usbDispatchEvents(InputInfoPtr pInfo)
 		wcmEvent(common, private->wcmBTNChannel, btn_ds);
 }
 
-/* Quirks to unify the tool types for GENERIC protocol tablet PCs */
-static void usbGenericTouchscreenQuirks(unsigned long *keys, unsigned long *abs)
+/* Quirks to unify the tool and tablet types for GENERIC protocol tablet PCs
+ *
+ * @param[in,out] keys Contains keys queried from hardware. If a
+ *   touchscreen is detected, keys are modified to add BTN_TOOL_FINGER so
+ *   that a TOUCH device is created later.
+ * @param[in] abs Used to detect multi-touch touchscreens.  When detected,
+ *   updates keys to add possibly missing BTN_TOOL_DOUBLETAP.
+ * @param[in,out] common Used only for tablet features.  Adds TCM_TPC for
+ *   touchscreens so correct defaults, such as absolute mode, are used.
+ */
+static void usbGenericTouchscreenQuirks(unsigned long *keys,
+					unsigned long *abs,
+					WacomCommonPtr common)
 {
 	/* USB Tablet PC single finger touch devices do not emit
 	 * BTN_TOOL_FINGER since it is a touchscreen device.
@@ -1622,7 +1623,10 @@ static void usbGenericTouchscreenQuirks(unsigned long *keys, unsigned long *abs)
 	if (ISBITSET(keys, BTN_TOUCH) &&
 			!ISBITSET(keys, BTN_TOOL_FINGER) &&
 			!ISBITSET(keys, BTN_TOOL_PEN))
+	{
 		SETBIT(keys, BTN_TOOL_FINGER); /* 1FGT */
+		TabletSetFeature(common, WCM_TPC);
+	}
 
 	/* Serial Tablet PC two finger touch devices do not emit
 	 * BTN_TOOL_DOUBLETAP since they are not touchpads.
@@ -1672,8 +1676,11 @@ static int usbProbeKeys(InputInfoPtr pInfo)
 	if (!ISBITSET(abs, ABS_MISC))
 	{
 		common->wcmProtocolLevel = WCM_PROTOCOL_GENERIC;
-		usbGenericTouchscreenQuirks(common->wcmKeys, abs);
+		usbGenericTouchscreenQuirks(common->wcmKeys, abs, common);
 	}
+
+	common->vendor_id = wacom_id.vendor;
+	common->tablet_id = wacom_id.product;
 
 	return wacom_id.product;
 }
