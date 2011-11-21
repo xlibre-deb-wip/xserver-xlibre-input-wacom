@@ -22,8 +22,9 @@ driver functions as a pointer input device.
 This driver supports the Wacom IV and Wacom V protocols. Serial tablets only 
 need this driver.  USB tablet support is available on some Linux platforms
 and requires the wacom kernel driver being loaded before this driver starts.
-Please check http://linuxwacom.sf.net for latest updates of Wacom X and
-kernel drivers.
+.PP
+Please check http://linuxwacom.sourceforge.net for latest updates of Wacom X
+and kernel drivers.
 .SH DRIVER-INTERNAL DEVICE HOTPLUGGING
 When input device hotplugging in the X server is enabled and no
 .B InputDevice
@@ -51,6 +52,12 @@ Dependent devices may be assigned tool-specific options through additional
 sections. We recommend that a
 .B MatchDriver "wacom"
 line is used in these sections in addition to the user-specific pattern.
+.PP
+Match directives are applied by the X server before the driver is selected.
+The type name of the parent device is appended by the driver. It is not
+possible to use a
+.B MatchProduct
+directive to match against this appended type name.
 .SH CONFIGURATION DETAILS
 Please refer to xorg.conf(5x) or xorg.conf.d(5x) for general configuration
 details and for options that can be used with all input drivers.  This
@@ -156,17 +163,13 @@ enables the touch event for Tablet PC that supports touch feature,  i.e.,
 system cursor moves when user touches the tablet.  Default to "on" for 
 Tablet PCs with touch feature; "off" for all other models.
 .TP 4
-.B Option \fI"Capacity"\fP \fI"number"\fP
-sets touch sensitivity level for capacitive touch device, where number 
-can be an integer from -1 to 5.  Default is 3 for capacitive tools and 
--1 for non-capacitive tools.
-.TP 4
 .B Option \fI"Rotate"\fP \fI"CW"|"CCW"|"HALF"|"NONE"\fP
 rotates the tablet orientation counterclockwise (CCW) or clockwise (CW) or 180 degrees (HALF). 
 If you have specific tablet mappings, i.e. TopX/Y or BottomX/Y were set, the mapping will be 
 applied before rotation. Rotation must be applied to the parent device
-(usually the stylus), rotation settings on hotplugged devices will be
-ignored. The default is "NONE".
+(usually the stylus), rotation settings on in-driver hotplugged devices (see
+.B DRIVER-INTERNAL DEVICE HOTPLUGGING
+) will be ignored. The default is "NONE".
 .TP 4
 .B Option \fI"PressCurve"\fP \fI"x1,y1,x2,y2"\fP
 sets pressure curve by control points x1, y1, x2, and y2.  Their values are in range 
@@ -199,6 +202,10 @@ sets the max distance from tablet to stop reporting movement for cursor in relat
 Default for Intuos series is 10, for Graphire series (including Volitos) is
 42. Only available for the cursor/puck device.
 .TP 4
+.B Option \fI"RawSample"\fP \fI"number"\fP
+Set  the  sample  window  size (a sliding average sampling window) for
+incoming input tool raw data points.  Default:  4, range of 1 to 20.
+.TP 4
 .B Option \fI"Serial"\fP \fI"number"\fP
 sets the serial number associated with the physical device. This allows
 to have multiple devices of the same type (i.e. multiple pens). This
@@ -217,12 +224,41 @@ xsetwacom, that comes with this driver.
 sets the pressure threshold used to generate a button 1 events of stylus.
 The threshold applies to the normalised pressure range of [0..2048].
 The default is 27.
+.TP 4
+.B Option \fI"Gesture"\fP \fI"bool"\fP
+Enable or disable gesture support on the device. Default: off unless the
+tablet supports multi-touch.
+.TP 4
+.B Option \fI"ZoomDistance"\fP \fI"number"\fP
+If
+.B Option \fI"Gesture"\fP
+is enabled, this option specifies the minimum movement distance before a
+zoom gesture is recognized.
+.TP 4
+.B Option \fI"ScrollDistance"\fP \fI"number"\fP
+If
+.B Option \fI"Gesture"\fP
+is enabled, this option specifies the minimum movement distance before a
+scroll gesture is recognized.
+.TP 4
+.B Option \fI"TapTime"\fP \fI"number"\fP
+If
+.B Option \fI"Gesture"\fP
+is enabled, this option determines the maximum time of a touch event to be
+recognized as tap. A press and release event shorter than
+.B TapTime
+generates button press and release events. Presses longer than
+.B TapTime
+do not generate button events, only motion events.
 .RE
 .SH "SEE ALSO"
-Xorg(1x), xorg.conf(5x), xorg.conf.d(5x), xorgconfig(1x), Xserver(1x), X(7).
+__xservername__(__appmansuffix__), xorg.conf(__filemansuffix__),
+xorg.conf.d(__filemansuffix__), X(__miscmansuffix__)
+.PP
+More information is available at http://linuxwacom.sourceforge.net
 .SH AUTHORS
-Frederic Lepied <lepied@xfree86.org>,
+Peter Hutterer <peter.hutterer@who-t.net>,
 Ping Cheng <pingc@wacom.com>,
+Frederic Lepied <lepied@xfree86.org>,
 John E. Joganic <jej@j-arkadia.com>,
-Magnus Vigerlöf <Magnus.Vigerlof@ipbo.se>,
-Peter Hutterer <peter.hutterer@who-t.net>
+Magnus Vigerlöf <Magnus.Vigerlof@ipbo.se>

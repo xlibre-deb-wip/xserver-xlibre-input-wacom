@@ -98,6 +98,9 @@ static int wcmAllocate(InputInfoPtr pInfo)
 	tool->device = pInfo;
 	/* tool->typeid is set once we know the type - see wcmSetType */
 
+	/* timers */
+	priv->serial_timer = TimerSet(NULL, 0, 0, NULL, NULL);
+
 	return 1;
 
 error:
@@ -119,6 +122,7 @@ static void wcmFree(InputInfoPtr pInfo)
 	if (!priv)
 		return;
 
+	TimerFree(priv->serial_timer);
 	free(priv->tool);
 	wcmFreeCommon(&priv->common);
 	free(priv);
@@ -221,6 +225,9 @@ static void wcmUninit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 	WacomDevicePtr *prev;
 	WacomCommonPtr common = priv->common;
 
+	if (!priv)
+		goto out;
+
 	DBG(1, priv, "\n");
 
 	/* Server 1.10 will UnInit all devices for us */
@@ -280,6 +287,7 @@ static void wcmUninit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 		dev = dev->next;
 	}
 
+out:
 	wcmFree(pInfo);
 	xf86DeleteInput(pInfo, 0);
 }
@@ -408,8 +416,8 @@ static void wcmLinkTouchAndPen(InputInfoPtr pInfo)
 				if (common->wcmTouchDevice ||
 						tmpcommon->wcmTouchDevice)
 				{
-					common->tablet_type |= WCM_PENTOUCH;
-					tmpcommon->tablet_type |= WCM_PENTOUCH;
+					TabletSetFeature(common, WCM_PENTOUCH);
+					TabletSetFeature(tmpcommon, WCM_PENTOUCH);
 				}
 			}
 		}
@@ -475,7 +483,7 @@ static int wcmPreInit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 	gWacomModule.wcmDrv = drv;
 
 	device = xf86SetStrOption(pInfo->options, "Device", NULL);
-	type = xf86FindOptionValue(pInfo->options, "Type");
+	type = xf86SetStrOption(pInfo->options, "Type", NULL);
 
 	/*
 	   Init process:
@@ -498,6 +506,8 @@ static int wcmPreInit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 	priv = (WacomDevicePtr) pInfo->private;
 	priv->common->device_path = device;
 	priv->name = pInfo->name;
+	priv->debugLevel = xf86SetIntOption(pInfo->options,
+					    "DebugLevel", priv->debugLevel);
 
 	/* check if the same device file has been added already */
 	if (wcmIsDuplicate(device, pInfo))
@@ -515,6 +525,8 @@ static int wcmPreInit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 		/* initialize supported keys with the first tool on the port */
 		wcmDeviceTypeKeys(pInfo);
 
+	common->debugLevel = xf86SetIntOption(pInfo->options,
+					      "CommonDBG", common->debugLevel);
 	oldname = pInfo->name;
 
 	if (wcmIsHotpluggedDevice(pInfo))
@@ -567,7 +579,7 @@ SetupProc_fail:
 	if (common && priv)
 		common->wcmDevices = priv->next;
 
-	if (pInfo && pInfo->fd != -1)
+	if (pInfo->fd != -1)
 	{
 		close(pInfo->fd);
 		pInfo->fd = -1;

@@ -22,6 +22,7 @@
 #endif
 
 #include <wacom-properties.h>
+#include <wacom-util.h>
 #include "Xwacom.h"
 
 #include <errno.h>
@@ -37,12 +38,11 @@
 #include <X11/Xatom.h>
 #include <X11/extensions/XInput.h>
 #include <X11/extensions/Xrandr.h>
+#include <X11/extensions/Xinerama.h>
 #include <X11/XKBlib.h>
 
 #define TRACE(...) \
 	if (verbose) fprintf(stderr, "... " __VA_ARGS__)
-
-#define ArrayLength(a) ((unsigned int)(sizeof(a) / (sizeof((a)[0]))))
 
 static int verbose = False;
 
@@ -57,6 +57,7 @@ enum prop_flags {
 	PROP_FLAG_READONLY = 2,
 	PROP_FLAG_WRITEONLY = 4,
 	PROP_FLAG_INVERTED = 8, /* only valid with PROP_FLAG_BOOLEAN */
+	PROP_FLAG_OUTPUT = 16,
 };
 
 
@@ -240,15 +241,6 @@ static param_t parameters[] =
 		.arg_count = 1,
 	},
 	{
-		.name = "Capacity",
-		.desc = "Touch sensitivity level (default is 3 for capacitive tools, "
-		"-1 for others). ",
-		.prop_name = WACOM_PROP_CAPACITY,
-		.prop_format = 32,
-		.prop_offset = 0,
-		.arg_count = 1,
-	},
-	{
 		.name = "CursorProximity",
 		.desc = "Sets cursor distance for proximity-out "
 		"in distance from the tablet "
@@ -373,15 +365,34 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_TOOL_TYPE,
 		.prop_format = 32,
 		.prop_offset = 0,
+		.arg_count = 1,
 		.prop_flags = PROP_FLAG_READONLY
 	},
 	{
 		.name = "ToolSerial",
-		.desc = "Returns the serial number of the associated device. ",
+		.desc = "Returns the serial number of the current device in proximity.",
 		.prop_name = WACOM_PROP_SERIALIDS,
 		.prop_format = 32,
 		.prop_offset = 3,
+		.arg_count = 1,
 		.prop_flags = PROP_FLAG_READONLY
+	},
+	{
+		.name = "ToolSerialPrevious",
+		.desc = "Returns the serial number of the previous device in proximity.",
+		.prop_name = WACOM_PROP_SERIALIDS,
+		.prop_format = 32,
+		.prop_offset = 1,
+		.arg_count = 1,
+		.prop_flags = PROP_FLAG_READONLY
+	},
+	{
+		.name = "BindToSerial",
+		.desc = "Binds this device to the serial number.",
+		.prop_name = WACOM_PROP_SERIAL_BIND,
+		.prop_format = 32,
+		.prop_offset = 0,
+		.arg_count = 1,
 	},
 	{
 		.name = "TabletID",
@@ -389,6 +400,7 @@ static param_t parameters[] =
 		.prop_name = WACOM_PROP_SERIALIDS,
 		.prop_format = 32,
 		.prop_offset = 0,
+		.arg_count = 1,
 		.prop_flags = PROP_FLAG_READONLY
 	},
 	{
@@ -396,7 +408,7 @@ static param_t parameters[] =
 		.desc = "Map the device to the given output. ",
 		.set_func = set_output,
 		.arg_count = 1,
-		.prop_flags = PROP_FLAG_WRITEONLY
+		.prop_flags = PROP_FLAG_WRITEONLY | PROP_FLAG_OUTPUT,
 	},
 	{
 		.name = "all",
@@ -431,6 +443,7 @@ struct deprecated
 	{"xyDefault",	"ResetArea"},
 	{"ClickForce",	"Threshold"},
 	{"RawFilter",   NULL},
+	{"Capacity",	NULL},
 	{NULL,		NULL}
 };
 
@@ -771,11 +784,11 @@ static void list_mod(Display *dpy)
 {
 	struct modifier *m = modifiers;
 
-	printf("%d modifiers are supported:\n", ArrayLength(modifiers) - 1);
+	printf("%zd modifiers are supported:\n", ARRAY_SIZE(modifiers) - 1);
 	while(m->name)
 		printf("	%s\n", m++->name);
 
-	printf("\n%d specialkeys are supported:\n", ArrayLength(specialkeys) - 1);
+	printf("\n%zd specialkeys are supported:\n", ARRAY_SIZE(specialkeys) - 1);
 	m = specialkeys;
 	while(m->name)
 		printf("	%s\n", m++->name);
@@ -1195,7 +1208,7 @@ static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, i
 
 	data = calloc(256, sizeof(long));
 	if (!parse_actions(dpy, argc, argv, data, &nitems))
-		return;
+		goto out;
 
 	/* obtain the button actions Atom */
 	XGetDeviceProperty(dpy, dev, btnact_prop, 0, 100, False,
@@ -1205,14 +1218,14 @@ static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, i
 	if (offset > btnact_nitems)
 	{
 		fprintf(stderr, "Invalid offset into %s property.\n", XGetAtomName(dpy, btnact_prop));
-		return;
+		goto out;
 	}
 
 	if (format != 32 || type != XA_ATOM)
 	{
 		fprintf(stderr, "Property '%s' in an unexpected format. This is a bug.\n",
 		        XGetAtomName(dpy, btnact_prop));
-		return;
+		goto out;
 	}
 
 	/* set or unset the property */
@@ -1251,6 +1264,8 @@ static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, i
 	}
 
 	XFlush(dpy);
+out:
+	free(data);
 }
 
 /**
@@ -1266,7 +1281,7 @@ static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, i
  * @param dpy   X11 display to query
  * @param dev   Device to modify
  * @param param Info about parameter to modify
- * @param argc  Dize of argv
+ * @param argc  Size of argv
  * @param argv  Arguments to parse
  */
 static void map_actions(Display *dpy, XDevice *dev, param_t* param, int argc, char **argv)
@@ -1463,7 +1478,16 @@ static Bool convert_value_from_user(const param_t *param, const char *value, int
 		if (param->prop_flags & PROP_FLAG_INVERTED)
 			*return_value = !(*return_value);
 	}
-	else
+	else if (param->prop_flags & PROP_FLAG_OUTPUT)
+	{
+		const char *prefix = "HEAD-";
+		/* We currently support HEAD-X, where X is 0-9 */
+		if (strlen(value) != strlen(prefix) + 1 ||
+		    strncasecmp(value, prefix, strlen(prefix)) != 0)
+			return False;
+
+		*return_value = value[strlen(prefix)] - '0';
+	} else
 	{
 		char *end;
 		long conversion = strtol(value, &end, 10);
@@ -1905,7 +1929,123 @@ static void get_map(Display *dpy, XDevice *dev, param_t *param, int argc, char**
 	}
 }
 
-static void _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
+/**
+ * Determine if we need to use fall back to Xinerama, or if the RandR
+ * extension will work OK. We depend on RandR 1.3 or better in order
+ * to work.
+ *
+ * A server bug causes the NVIDIA driver to report RandR 1.3 support
+ * despite not exposing RandR CRTCs. We need to fall back to Xinerama
+ * for this case as well.
+ *
+ * @param Display  X11 display to connect to
+ * @return         True if the Xinerama should be used instead of RandR
+ */
+static Bool need_xinerama(Display *dpy)
+{
+	int opcode, event, error;
+	int maj, min;
+
+	if (!XQueryExtension(dpy, "RANDR", &opcode, &event, &error) ||
+	    !XRRQueryVersion(dpy, &maj, &min) || (maj * 1000 + min) < 1002 ||
+	    XQueryExtension(dpy, "NV-CONTROL", &opcode, &event, &error))
+	{
+		TRACE("RandR extension not found, too old, or NV-CONTROL "
+			"extension is also present.\n");
+		return True;
+	}
+
+	return False;
+}
+
+/**
+ * Uses the area of the desktop and the server's transformation
+ * matrix to calculate the dimensions and location of the area
+ * the given device is mapped to. If the matrix describes a
+ * non-rectangular transform (e.g. rotation or shear), this
+ * function returns False.
+ *
+ * @param dpy          X11 display to connect to
+ * @param dev          Device to query
+ * @param width[out]   Width of the mapped area
+ * @param height[out]  Height of the mapped area
+ * @param x_org[out]   Offset from the desktop origin to the mapped area's left edge
+ * @param y_org[out]   Offset from the desktop origin to the mapped area's top edge
+ * @return             True if the function could determine the mapped area
+ */
+Bool get_mapped_area(Display *dpy, XDevice *dev, int *width, int *height, int *x_org, int *y_org)
+{
+	Atom matrix_prop = XInternAtom(dpy, "Coordinate Transformation Matrix", True);
+	Atom type;
+	int format;
+	unsigned long nitems, bytes_after;
+	float *data;
+	Bool matrix_is_valid = True;
+	int i;
+
+	int display_width = DisplayWidth(dpy, DefaultScreen(dpy));
+	int display_height = DisplayHeight(dpy, DefaultScreen(dpy));
+	TRACE("Desktop width: %d, height: %d\n", display_width, display_height);
+
+	if (!matrix_prop)
+	{
+		fprintf(stderr, "Server does not support transformation\n");
+		return False;
+	}
+
+	XGetDeviceProperty(dpy, dev, matrix_prop, 0, 9, False,
+	                   AnyPropertyType, &type, &format, &nitems,
+	                   &bytes_after, (unsigned char**)&data);
+
+	if (format != 32 || type != XInternAtom(dpy, "FLOAT", True))
+	{
+		fprintf(stderr,"Property for '%s' has unexpected type - this is a bug.\n",
+			"Coordinate Transformation Matrix");
+		XFree(data);
+		return False;
+	}
+
+	TRACE("Current transformation matrix:\n");
+	TRACE("	[ %f %f %f ]\n", data[0], data[1], data[2]);
+	TRACE("	[ %f %f %f ]\n", data[3], data[4], data[5]);
+	TRACE("	[ %f %f %f ]\n", data[6], data[7], data[8]);
+
+	for (i = 0; i < nitems && matrix_is_valid; i++)
+	{
+		switch (i) {
+			case 0: *width  = rint(display_width  * data[i]); break;
+			case 2: *x_org  = rint(display_width  * data[i]); break;
+			case 4: *height = rint(display_height * data[i]); break;
+			case 5: *y_org  = rint(display_height * data[i]); break;
+			case 8:
+				if (data[i] != 1)
+					matrix_is_valid = False;
+				break;
+			default:
+				if (data[i] != 0)
+					matrix_is_valid = False;
+				break;
+		}
+	}
+	XFree(data);
+
+	if (!matrix_is_valid)
+		fprintf(stderr, "Non-rectangular transformation matrix detected.\n");
+
+	return matrix_is_valid;
+}
+
+/**
+ * Modifies the server's transformation matrix property for the given
+ * device. It takes as input a 9-element array of floats interpreted
+ * as the row-major 3x3 matrix to be set.
+ *
+ * @param dpy      X11 display to connect to
+ * @param dev      Device to query
+ * @param fmatrix  A row-major 3x3 transformation matrix
+ * @return         True if the transformation matrix was successfully modified
+ */
+static Bool _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
 {
 	Atom matrix_prop = XInternAtom(dpy, "Coordinate Transformation Matrix", True);
 	Atom type;
@@ -1917,13 +2057,13 @@ static void _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
 
 	if (!matrix_prop)
 	{
-		fprintf(stderr, "Server does not support transformation");
-		return;
+		fprintf(stderr, "Server does not support transformation\n");
+		return False;
 	}
 
 	/* XI1 expects 32 bit properties (including float) as long,
 	 * regardless of architecture */
-	for (i = 0; i < sizeof(matrix)/sizeof(matrix[0]); i++)
+	for (i = 0; i < ARRAY_SIZE(matrix); i++)
 		*(float*)(matrix + i) = fmatrix[i];
 
 	XGetDeviceProperty(dpy, dev, matrix_prop, 0, 9, False,
@@ -1934,49 +2074,84 @@ static void _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
 	{
 		fprintf(stderr, "Property for '%s' has unexpected type - this is a bug.\n",
 			"Coordinate Transformation Matrix");
-		return;
+		return False;
 	}
 
 	XChangeDeviceProperty(dpy, dev, matrix_prop, type, format,
 			      PropModeReplace, (unsigned char*)matrix, 9);
 	XFree(data);
 	XFlush(dpy);
+
+	return True;
 }
 
-static void set_output(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv)
+/**
+ * Adjust the transformation matrix based on a user-defined area.
+ * This function will attempt to map the given pointer to an arbitrary
+ * rectangular portion of the desktop.
+ *
+ * @param dpy            X11 display to connect to
+ * @param dev            Device to query
+ * @param offset_x       Offset of output area's left edge from desktop origin
+ * @param offset_y       Offset of output area's top edge from desktop origin
+ * @param output_width   Width of output area
+ * @param output_height  Height of output area
+ * @return               True if the transformation matrix was successfully modified
+ */
+static Bool set_output_area(Display *dpy, XDevice *dev,
+			int offset_x, int offset_y,
+			int output_width, int output_height)
 {
-	int min, maj;
+	int width = DisplayWidth(dpy, DefaultScreen(dpy));
+	int height = DisplayHeight(dpy, DefaultScreen(dpy));
+
+	/* offset */
+	float x = 1.0 * offset_x/width;
+	float y = 1.0 * offset_y/height;
+
+	/* mapping */
+	float w = 1.0 * output_width/width;
+	float h = 1.0 * output_height/height;
+
+	float matrix[9] = { 1, 0, 0,
+			    0, 1, 0,
+			    0, 0, 1};
+	matrix[2] = x;
+	matrix[5] = y;
+	matrix[0] = w;
+	matrix[4] = h;
+
+	TRACE("Remapping to output area %dx%d @ %d,%d.\n", output_width,
+		      output_height, offset_x, offset_y);
+
+	TRACE("Transformation matrix:\n");
+	TRACE("	[ %f %f %f ]\n", matrix[0], matrix[1], matrix[2]);
+	TRACE("	[ %f %f %f ]\n", matrix[3], matrix[4], matrix[5]);
+	TRACE("	[ %f %f %f ]\n", matrix[6], matrix[7], matrix[8]);
+
+	return _set_matrix_prop(dpy, dev, matrix);
+}
+
+
+/**
+ * Adjust the transformation matrix based on RandR settings. This function
+ * will attempt to map the given device to the output with the given RandR
+ * output name.
+ *
+ * @param dpy          X11 display to connect to
+ * @param dev          Device to query
+ * @param output_name  Name of the RandR output to map to
+ * @return             True if the transformation matrix was successfully modified
+ */
+static Bool set_output_xrandr(Display *dpy, XDevice *dev, char *output_name)
+{
 	int i, found = 0;
-	char *output_name;
+	int x, y, width, height;
 	XRRScreenResources *res;
 	XRROutputInfo *output_info;
 	XRRCrtcInfo *crtc_info;
 
-	if (argc != param->arg_count)
-	{
-		fprintf(stderr, "'%s' requires exactly %d value(s).\n", param->name,
-			param->arg_count);
-		return;
-	}
-
-	output_name = argv[0];
-
-	if (!XRRQueryExtension(dpy, &maj, &min)) /* using min/maj as dummy */
-	{
-		fprintf(stderr, "Server does not support RandR");
-		return;
-	}
-
-	if (!XRRQueryVersion(dpy, &maj, &min) ||
-	    (maj * 1000 + min) < 1002)
-	{
-		fprintf(stderr, "Server does not support RandR 1.2");
-		return;
-	}
-
-
 	res = XRRGetScreenResources(dpy, DefaultRootWindow(dpy));
-
 	for (i = 0; i < res->noutput && !found; i++)
 	{
 		output_info = XRRGetOutputInfo(dpy, res, res->outputs[i]);
@@ -1988,8 +2163,13 @@ static void set_output(Display *dpy, XDevice *dev, param_t *param, int argc, cha
 			continue;
 
 		crtc_info = XRRGetCrtcInfo (dpy, res, output_info->crtc);
-		TRACE("CRTC (%dx%d) %dx%d\n", crtc_info->x, crtc_info->y,
-			crtc_info->width, crtc_info->height);
+		x = crtc_info->x;
+		y = crtc_info->y;
+		width = crtc_info->width;
+		height = crtc_info->height;
+		XRRFreeCrtcInfo(crtc_info);
+
+		TRACE("CRTC (%dx%d) %dx%d\n", x, y, width, height);
 
 		if (strcmp(output_info->name, output_name) == 0)
 		{
@@ -1997,41 +2177,179 @@ static void set_output(Display *dpy, XDevice *dev, param_t *param, int argc, cha
 			break;
 		}
 	}
+	XRRFreeScreenResources(res);
 
 	/* crtc holds our screen info, need to compare to actual screen size */
 	if (found)
 	{
-		int width = DisplayWidth(dpy, DefaultScreen(dpy));
-		int height = DisplayHeight(dpy, DefaultScreen(dpy));
-
-		/* offset */
-		float x = 1.0 * crtc_info->x/width;
-		float y = 1.0 * crtc_info->y/height;
-
-		/* mapping */
-		float w = 1.0 * crtc_info->width/width;
-		float h = 1.0 * crtc_info->height/height;
-
-		float matrix[9] = { 1, 0, 0,
-				    0, 1, 0,
-				    0, 0, 1};
-		matrix[2] = x;
-		matrix[5] = y;
-		matrix[0] = w;
-		matrix[4] = h;
-
-		TRACE("Transformation matrix:\n");
-		TRACE("	[ %f %f %f ]\n", matrix[0], matrix[1], matrix[2]);
-		TRACE("	[ %f %f %f ]\n", matrix[3], matrix[4], matrix[5]);
-		TRACE("	[ %f %f %f ]\n", matrix[6], matrix[7], matrix[8]);
-
-		_set_matrix_prop(dpy, dev, matrix);
+		TRACE("Setting CRTC %s\n", output_name);
+		return set_output_area(dpy, dev, x, y, width, height);
 	} else
+	{
 		printf("Unable to find output '%s'. "
 			"Output may not be connected.\n", output_name);
 
-	XRRFreeScreenResources(res);
+		return False;
+	}
 }
+
+/**
+ * Adjust the transformation matrix based on the Xinerama settings. This
+ * function will attempt to map the given device to the specified Xinerama
+ * head number.
+ *
+ * For TwinView This would better be done with libXNVCtrl but until they
+ * learn to package it properly, we need to rely on Xinerama. Besides,
+ * libXNVCtrl isn't available on RHEL, so we'd have to do it through
+ * Xinerama there anyway.
+ *
+ * @param dpy   X11 display to connect to
+ * @param dev   Device to query
+ * @param head  Index of Xinerama head to map to
+ * @return      True if the transformation matrix was successfully modified
+ */
+static Bool set_output_xinerama(Display *dpy, XDevice *dev, int head)
+{
+	int event, error;
+	XineramaScreenInfo *screens;
+	int nscreens;
+	Bool success = False;
+
+	if (!XineramaQueryExtension(dpy, &event, &error))
+	{
+		fprintf(stderr, "Unable to set screen mapping. Xinerama extension not found\n");
+		return success;
+	}
+
+	screens = XineramaQueryScreens(dpy, &nscreens);
+
+	if (nscreens == 0)
+	{
+		fprintf(stderr, "Xinerama failed to query screens.\n");
+		goto out;
+	} else if (nscreens <= head)
+	{
+		fprintf(stderr, "Found %d screens, but you requested number %d.\n",
+				nscreens, head);
+		goto out;
+	}
+
+	TRACE("Setting xinerama head %d\n", head);
+
+	success = set_output_area(dpy, dev,
+		    screens[head].x_org, screens[head].y_org,
+		    screens[head].width, screens[head].height);
+
+out:
+	XFree(screens);
+	return success;
+}
+
+/**
+ * Adjust the transformation matrix based on the desktop size.
+ * This function will attempt to map the given device to the entire
+ * desktop.
+ *
+ * @param dpy  X11 display to connect to
+ * @param dev  Device to query
+ * @return     True if the transformation matrix was successfully modified
+ */
+static Bool set_output_desktop(Display *dpy, XDevice *dev)
+{
+	int display_width = DisplayWidth(dpy, DefaultScreen(dpy));
+	int display_height = DisplayHeight(dpy, DefaultScreen(dpy));
+
+	return set_output_area(dpy, dev, 0, 0, display_width, display_height);
+}
+
+/**
+ * Adjust the transformation matrix based on its current value. This
+ * function will attempt to map the given device to the next output
+ * exposed in the list of Xinerama heads. If not mapped to a Xinerama
+ * head, it maps to the first head. If mapped to the last Xinerama
+ * head, it maps to the entire desktop.
+ *
+ * @param dpy  X11 display to connect to
+ * @param dev  Device to query
+ * @return     True if the transformation matrix was successfully modified
+ */
+static Bool set_output_next(Display *dpy, XDevice *dev)
+{
+	XineramaScreenInfo *screens;
+	int event, error, nscreens, head;
+	int width, height, x_org, y_org;
+	Bool success = False;
+
+	if (!get_mapped_area(dpy, dev, &width, &height, &x_org, &y_org))
+		return success;
+
+	if (!XineramaQueryExtension(dpy, &event, &error))
+	{
+		fprintf(stderr, "Unable to get screen mapping. Xinerama extension not found\n");
+		return success;
+	}
+
+	screens = XineramaQueryScreens(dpy, &nscreens);
+
+	if (nscreens == 0)
+	{
+		fprintf(stderr, "Xinerama failed to query screens.\n");
+		goto out;
+	}
+
+	TRACE("Remapping to next available output.\n");
+	for (head = 0; head < nscreens && !success; head++)
+	{
+		if (screens[head].width == width && screens[head].height == height &&
+		    screens[head].x_org == x_org && screens[head].y_org  == y_org)
+		{
+			if (head + 1 < nscreens)
+				success = set_output_xinerama(dpy, dev, head+1);
+			else
+				success = set_output_desktop(dpy, dev);
+
+			if (!success)
+				goto out;
+		}
+	}
+
+	if (!success)
+		success = set_output_xinerama(dpy, dev, 0);
+
+out:
+	XFree(screens);
+	return success;
+}
+
+static void set_output(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv)
+{
+	int head_no;
+	int x, y;
+	unsigned int width, height;
+	int flags = XParseGeometry(argv[0], &x, &y, &width, &height);
+	Bool success = False;
+
+	if (argc != param->arg_count)
+	{
+		fprintf(stderr, "'%s' requires exactly %d value(s).\n", param->name,
+			param->arg_count);
+		return;
+	}
+
+	if (MaskIsSet(flags, XValue|YValue|WidthValue|HeightValue))
+		success = set_output_area(dpy, dev, x, y, width, height);
+	else if (strcasecmp(argv[0], "next") == 0)
+		success = set_output_next(dpy, dev);
+	else if (strcasecmp(argv[0], "desktop") == 0)
+		success = set_output_desktop(dpy, dev);
+	else if (!need_xinerama(dpy))
+		success = set_output_xrandr(dpy, dev, argv[0]);
+	else if  (convert_value_from_user(param, argv[0], &head_no))
+		success = set_output_xinerama(dpy, dev, head_no);
+	else
+		fprintf(stderr, "Unable to find an output '%s'.\n", argv[0]);
+}
+
 
 static void get_all(Display *dpy, XDevice *dev, param_t *param, int argc, char **argv)
 {
@@ -2116,10 +2434,13 @@ static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char
 
 	if (param->get_func)
 	{
+		TRACE("custom get func for param\n");
 		param->get_func(dpy, dev, param, argc, argv);
 		return;
 	}
 
+
+	TRACE("Getting property %ld, offset %d\n", prop, param->prop_offset);
 	XGetDeviceProperty(dpy, dev, prop, 0, 1000, False, AnyPropertyType,
 				&type, &format, &nitems, &bytes_after, &data);
 
@@ -2138,7 +2459,10 @@ static void get_param(Display *dpy, XDevice *dev, param_t *param, int argc, char
 				int val = data[param->prop_offset + i];
 
 				if (param->prop_flags & PROP_FLAG_BOOLEAN)
-					sprintf(&str[strlen(str)], "%s", val ?  "on" : "off");
+					if (param->prop_flags & PROP_FLAG_INVERTED)
+						sprintf(&str[strlen(str)], "%s", val ?  "off" : "on");
+					else
+						sprintf(&str[strlen(str)], "%s", val ?  "on" : "off");
 				else
 					sprintf(&str[strlen(str)], "%d", val);
 
@@ -2345,8 +2669,8 @@ static void test_parameter_number(void)
 	 * deprecated them.
 	 * Numbers include trailing NULL entry.
 	 */
-	assert(ArrayLength(parameters) == 33);
-	assert(ArrayLength(deprecated_parameters) == 16);
+	assert(ARRAY_SIZE(parameters) == 34);
+	assert(ARRAY_SIZE(deprecated_parameters) == 17);
 }
 
 /**

@@ -256,7 +256,7 @@ static void sendAction(InputInfoPtr pInfo, int press,
 						break;
 
 					if (countPresses(btn_no, &keys[i], nkeys - i))
-						xf86PostButtonEvent(pInfo->dev,
+						xf86PostButtonEventP(pInfo->dev,
 								is_absolute(pInfo), btn_no,
 								0, first_val, num_val,
 								VCOPY(valuators, num_val));
@@ -366,8 +366,8 @@ static int getWheelButton(InputInfoPtr pInfo, const WacomDeviceState* ds,
 	{
 		value = ds->stripx - priv->oldStripX;
 
-		fakeButton = (value > 0) ? priv->striplup : priv->stripldn;
-		*fakeKey = (value > 0) ? priv->strip_keys[0+1] : priv->strip_keys[1+1];
+		fakeButton = (value < 0) ? priv->striplup : priv->stripldn;
+		*fakeKey = (value < 0) ? priv->strip_keys[0+1] : priv->strip_keys[1+1];
 	}
 
 	/* emulate events for right strip */
@@ -375,8 +375,8 @@ static int getWheelButton(InputInfoPtr pInfo, const WacomDeviceState* ds,
 	{
 		value = ds->stripy - priv->oldStripY;
 
-		fakeButton = (value > 0) ? priv->striprup : priv->striprdn;
-		*fakeKey = (value > 0) ? priv->strip_keys[2+1] : priv->strip_keys[3+1];
+		fakeButton = (value < 0) ? priv->striprup : priv->striprdn;
+		*fakeKey = (value < 0) ? priv->strip_keys[2+1] : priv->strip_keys[3+1];
 	}
 
 	DBG(10, priv, "send fakeButton %x with value = %d \n",
@@ -479,9 +479,9 @@ void wcmRotateAndScaleCoordinates(InputInfoPtr pInfo, int* x, int* y)
 				   axis_x->max_value, axis_x->min_value);
 	}
 
-	if (common->wcmRotate == ROTATE_CCW)
+	if (common->wcmRotate == ROTATE_CW)
 		*y = axis_y->max_value - (*y - axis_y->min_value);
-	else if (common->wcmRotate == ROTATE_CW)
+	else if (common->wcmRotate == ROTATE_CCW)
 		*x = axis_x->max_value - (*x - axis_x->min_value);
 	else if (common->wcmRotate == ROTATE_HALF)
 	{
@@ -515,7 +515,6 @@ static void wcmUpdateOldState(const InputInfoPtr pInfo,
 	priv->oldX = priv->currentX;
 	priv->oldY = priv->currentY;
 	priv->oldZ = ds->pressure;
-	priv->oldCapacity = ds->capacity;
 	priv->oldTiltX = tx;
 	priv->oldTiltY = ty;
 	priv->oldStripX = ds->stripx;
@@ -639,7 +638,7 @@ wcmSendNonPadEvents(InputInfoPtr pInfo, const WacomDeviceState *ds,
 	} /* not in proximity */
 }
 
-#define IsArtPen(ds)    (ds->device_id == 0x885 || ds->device_id == 0x804)
+#define IsArtPen(ds)    (ds->device_id == 0x885 || ds->device_id == 0x804 || ds->device_id == 0x100804)
 
 /*****************************************************************************
  * wcmSendEvents --
@@ -653,7 +652,7 @@ void wcmSendEvents(InputInfoPtr pInfo, const WacomDeviceState* ds)
 #endif
 	int type = ds->device_type;
 	int id = ds->device_id;
-	int serial = (int)ds->serial_num;
+	unsigned int serial = ds->serial_num;
 	int x = ds->x;
 	int y = ds->y;
 	int z = ds->pressure;
@@ -662,6 +661,17 @@ void wcmSendEvents(InputInfoPtr pInfo, const WacomDeviceState* ds)
 	WacomDevicePtr priv = (WacomDevicePtr) pInfo->private;
 	int v3, v4, v5;
 	int valuators[priv->naxes];
+
+	if (priv->serial && serial != priv->serial)
+	{
+		DBG(10, priv, "serial number"
+				" is %u but your system configured %u",
+				serial, (int)priv->serial);
+		return;
+	}
+
+	if (priv->cur_serial != serial)
+		wcmUpdateSerial(pInfo, serial);
 
 	/* don't move the cursor when going out-prox */
 	if (!ds->proximity)
@@ -739,8 +749,6 @@ void wcmSendEvents(InputInfoPtr pInfo, const WacomDeviceState* ds)
 		wcmSendNonPadEvents(pInfo, ds, 0, priv->naxes, valuators);
 
 	priv->oldProximity = ds->proximity;
-	priv->old_device_id = id;
-	priv->old_serial = serial;
 	if (ds->proximity)
 		wcmUpdateOldState(pInfo, ds);
 	else
@@ -750,7 +758,6 @@ void wcmSendEvents(InputInfoPtr pInfo, const WacomDeviceState* ds)
 		priv->oldX = 0;
 		priv->oldY = 0;
 		priv->oldZ = 0;
-		priv->oldCapacity = ds->capacity;
 		priv->oldTiltX = 0;
 		priv->oldTiltY = 0;
 		priv->oldStripX = 0;
@@ -758,6 +765,9 @@ void wcmSendEvents(InputInfoPtr pInfo, const WacomDeviceState* ds)
 		priv->oldRot = 0;
 		priv->oldThrottle = 0;
 		priv->devReverseCount = 0;
+		priv->old_serial = serial;
+		priv->old_device_id = id;
+		wcmUpdateSerial(pInfo, 0);
 	}
 }
 
@@ -795,12 +805,11 @@ wcmCheckSuppress(WacomCommonPtr common,
 	if (dsOrig->stripy != dsNew->stripy) goto out;
 
 	/* FIXME: we should have different suppress values for different
-	 * axes. The resolution for x/y is vastly higher than for capacity
-	 * for example. */
+	 * axes with vastly different ranges.
+	 */
 	if (abs(dsOrig->tiltx - dsNew->tiltx) > suppress) goto out;
 	if (abs(dsOrig->tilty - dsNew->tilty) > suppress) goto out;
 	if (abs(dsOrig->pressure - dsNew->pressure) > suppress) goto out;
-	if (abs(dsOrig->capacity - dsNew->capacity) > suppress) goto out;
 	if (abs(dsOrig->throttle - dsNew->throttle) > suppress) goto out;
 	if (abs(dsOrig->rotation - dsNew->rotation) > suppress &&
 	    (1800 - abs(dsOrig->rotation - dsNew->rotation)) >  suppress) goto out;
@@ -892,7 +901,8 @@ void wcmEvent(WacomCommonPtr common, unsigned int channel,
 	}
 
 	if (TabletHasFeature(common, WCM_ROTATION) &&
-		TabletHasFeature(common, WCM_RING)) /* I4 */
+		TabletHasFeature(common, WCM_RING) &&
+		ds.device_type == CURSOR_ID) /* I4 mouse */
 	{
 		/* convert Intuos4 mouse tilt to rotation */
 		ds.rotation = wcmTilt2R(ds.tiltx, ds.tilty,
@@ -1119,7 +1129,7 @@ static void commonDispatchDevice(WacomCommonPtr common, unsigned int channel,
 	/* Tool on the tablet when driver starts. This sometime causes
 	 * access errors to the device */
 	if (!tool->enabled) {
-		xf86Msg(X_ERROR, "wcmEvent: tool not initialized yet. Skipping event. \n");
+		xf86Msg(X_ERROR, "tool not initialized yet. Skipping event. \n");
 		return;
 	}
 
@@ -1149,6 +1159,7 @@ static void commonDispatchDevice(WacomCommonPtr common, unsigned int channel,
 			 */
 			if (common->wcmTouchDevice->oldProximity)
 			{
+				common->wcmGestureMode = 0;
 				wcmSoftOutEvent(common->wcmTouchDevice->pInfo);
 				return;
 			}
@@ -1159,14 +1170,16 @@ static void commonDispatchDevice(WacomCommonPtr common, unsigned int channel,
 	}
 
 	if (IsPen(priv))
+		common->wcmPenInProx = filtered.proximity;
+
+	if ((IsPen(priv) || IsTouch(priv)) && common->wcmMaxZ)
 	{
 		priv->minPressure = rebasePressure(priv, &filtered);
 		filtered.pressure = normalizePressure(priv, &filtered);
-		filtered.buttons = setPressureButton(priv, &filtered);
+		if (IsPen(priv))
+			filtered.buttons = setPressureButton(priv, &filtered);
 		filtered.pressure = applyPressureCurve(priv,&filtered);
-		common->wcmPenInProx = filtered.proximity;
 	}
-
 	else if (IsCursor(priv) && !priv->oldCursorHwProx)
 	{
 		/* initial current max distance for Intuos series */
@@ -1297,11 +1310,12 @@ int wcmInitTablet(InputInfoPtr pInfo, const char* id, float version)
 			common->wcmResolX, common->wcmResolY,
 			HANDLE_TILT(common) ? "enabled" : "disabled");
 	else
-		xf86Msg(X_PROBED, "%s: Wacom %s tablet maxX=%d maxY=%d "
+		xf86Msg(X_PROBED, "%s: Wacom %s tablet maxX=%d maxY=%d maxZ=%d "
 			"resX=%d resY=%d \n",
 			pInfo->name,
 			model->name,
 			common->wcmMaxTouchX, common->wcmMaxTouchY,
+			common->wcmMaxZ,
 			common->wcmTouchResolX, common->wcmTouchResolY);
 
 	return Success;
@@ -1381,9 +1395,6 @@ WacomCommonPtr wcmNewCommon(void)
 	common->wcmFlags = 0;               /* various flags */
 	common->wcmProtocolLevel = WCM_PROTOCOL_4; /* protocol level */
 	common->wcmTPCButton = 0;          /* set Tablet PC button on/off */
-	common->wcmCapacity = -1;          /* Capacity is disabled */
-	common->wcmCapacityDefault = -1;    /* default to -1 when capacity isn't supported */
-					   /* 3 when capacity is supported */
 	common->wcmGestureParameters.wcmZoomDistance = 50;
 	common->wcmGestureParameters.wcmZoomDistanceDefault = 50;
 	common->wcmGestureParameters.wcmScrollDirection = 0;

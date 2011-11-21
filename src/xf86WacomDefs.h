@@ -23,6 +23,7 @@
 /*****************************************************************************
  * General Defines
  ****************************************************************************/
+#include <wacom-util.h>
 #include <asm/types.h>
 #include <linux/input.h>
 #define MAX_USB_EVENTS 32
@@ -94,30 +95,6 @@
 #define ERASER_PROX     4
 #define OTHER_PROX      1
 
-/* to access kernel defined bits */
-#define BIT(x)		(1UL<<((x) & (BITS_PER_LONG - 1)))
-#define BITS_PER_LONG	(sizeof(long) * 8)
-#define NBITS(x)	((((x)-1)/BITS_PER_LONG)+1)
-#define ISBITSET(x,y)	((x)[LONG(y)] & BIT(y))
-#define SETBIT(x,y)	((x)[LONG(y)] |= BIT(y))
-#define CLEARBIT(x,y)	((x)[LONG(y)] &= ~BIT(y))
-#define OFF(x)		((x)%BITS_PER_LONG)
-#define LONG(x)		((x)/BITS_PER_LONG)
-
-/**
- * Test if the mask is set in the given bitfield.
- * @return TRUE if set or FALSE otherwise.
- */
-#define MaskIsSet(bitfield, mask) !!(((bitfield) & (mask)) == (mask))
-/**
- * Set the given mask for the given bitfield.
- */
-#define MaskSet(bitfield, mask) ((bitfield) |= (mask))
-/**
- * Clear the given mask from the given bitfield
- */
-#define MaskClear(bitfield, mask) ((bitfield) &= ~(mask))
-
 /******************************************************************************
  * Forward Declarations
  *****************************************************************************/
@@ -188,7 +165,8 @@ struct _WacomModel
 							  button handling,
 							  always an LCD) */
 #define WCM_PENTOUCH		0x00000400 /* Tablet supports pen and touch */
-#define TabletHasFeature(common, feature) (((common)->tablet_type & (feature)) != 0)
+#define TabletHasFeature(common, feature) MaskIsSet((common)->tablet_type, (feature))
+#define TabletSetFeature(common, feature) MaskSet((common)->tablet_type, (feature))
 
 #define ABSOLUTE_FLAG		0x00000100
 #define BAUD_19200_FLAG		0x00000400
@@ -208,7 +186,7 @@ struct _WacomModel
 #define WCM_MAX_MOUSE_BUTTONS	16	/* maximum number of buttons-on-pointer
                                          * (which are treated as mouse buttons,
                                          * not as keys like tablet menu buttons). 
-					 * For backword compability support, 
+					 * For backward compability support,
 					 * tablet buttons besides the strips are
 					 * treated as buttons */
 
@@ -227,7 +205,7 @@ struct _PROPINFO
 
 struct _WacomDeviceRec
 {
-	char *name;		/* Do not move, same offset as common->wcmDevice. Used by DBG macro */
+	char *name;		/* Do not move, same offset as common->device_path. Used by DBG macro */
 	/* configuration fields */
 	struct _WacomDeviceRec *next;
 	InputInfoPtr pInfo;
@@ -244,7 +222,8 @@ struct _WacomDeviceRec
 	int maxY;	        /* tool physical maxY in device coordinates*/
 	double factorX;		/* X factor */
 	double factorY;		/* Y factor */
-	unsigned int serial;	/* device serial number */
+	unsigned int serial;	/* device serial number this device takes (if 0, any serial is ok) */
+	unsigned int cur_serial; /* current serial in prox */
 	int maxWidth;		/* max active screen width in screen coords */
 	int maxHeight;		/* max active screen height in screen coords */
 	int leftPadding;	/* left padding for virtual tablet in device coordinates*/
@@ -284,7 +263,6 @@ struct _WacomDeviceRec
 	int oldX;               /* previous X position */
 	int oldY;               /* previous Y position */
 	int oldZ;               /* previous pressure */
-	int oldCapacity;        /* previous capacity */
 	int oldTiltX;           /* previous tilt in x direction */
 	int oldTiltY;           /* previous tilt in y direction */    
 	int oldWheel;           /* previous wheel value */    
@@ -296,7 +274,7 @@ struct _WacomDeviceRec
 	int oldProximity;       /* previous proximity */
 	int oldCursorHwProx;	/* previous cursor hardware proximity */
 	int old_device_id;	/* last in prox device id */
-	int old_serial;		/* last in prox tool serial number */
+	unsigned int old_serial;/* last in prox tool serial number */
 	int devReverseCount;	/* Relative ReverseConvert called twice each movement*/
 
 	/* JEJ - throttle */
@@ -317,6 +295,8 @@ struct _WacomDeviceRec
 	Atom btn_actions[WCM_MAX_BUTTONS];
 	Atom wheel_actions[4];
 	Atom strip_actions[4];
+
+	OsTimerPtr serial_timer; /* timer used for serial number property update */
 };
 
 /******************************************************************************
@@ -336,7 +316,6 @@ struct _WacomDeviceState
 	int y;
 	int buttons;
 	int pressure;
-	int capacity;
 	int tiltx;
 	int tilty;
 	int stripx;
@@ -431,8 +410,9 @@ struct _WacomCommonRec
 	dev_t min_maj;               /* minor/major number */
 	unsigned char wcmFlags;     /* various flags (handle tilt) */
 	int debugLevel;
+	int vendor_id;		     /* Vendor ID */
 	int tablet_id;		     /* USB tablet ID */
-	int tablet_type;	     /* type (penabled/1FGT/2FGT, etc) of the tablet */
+	int tablet_type;	     /* bitmask of tablet features (WCM_LCD, WCM_PEN, etc) */
 	int fd;                      /* file descriptor to tablet */
 	int fd_refs;                 /* number of references to fd; if =0, fd is invalid */
 	unsigned long wcmKeys[NBITS(KEY_MAX)]; /* supported tool types for the device */
@@ -452,7 +432,6 @@ struct _WacomCommonRec
 	int wcmTouchResolY;	     /* touch Y resolution in points/m */
 	                             /* tablet Z resolution is equivalent
 	                              * to wcmMaxZ which is equal to 100% pressure */
-	int wcmMaxCapacity;	     /* max capacity value */
 	int wcmMaxDist;              /* tablet max distance value */
 	int wcmMaxtiltX;	     /* styli max tilt in X directory */ 
 	int wcmMaxtiltY;	     /* styli max tilt in Y directory */ 
@@ -481,9 +460,6 @@ struct _WacomCommonRec
 	int wcmGestureDefault;       /* default touch gesture to disable when not supported */
 	int wcmGestureMode;	       /* data is in Gesture Mode? */
 	WacomDeviceState wcmGestureState[MAX_FINGERS]; /* inital state when in gesture mode */
-	int wcmCapacity;	     /* disable/enable capacity */
-	int wcmCapacityDefault;      /* default to -1 when capacity isn't supported/disabled */
-				     /* 3 when capacity is supported */
 	WacomGesturesParameters wcmGestureParameters;
 	int wcmMaxCursorDist;	     /* Max mouse distance reported so far */
 	int wcmCursorProxoutDist;    /* Max mouse distance for proxy-out max/256 units */
@@ -513,7 +489,7 @@ struct _WacomTool
 	WacomToolPtr next; /* Next tool in list */
 
 	int typeid; /* Tool type */
-	int serial; /* Serial id, 0 == no serial id */
+	unsigned int serial; /* Serial id, 0 == no serial id */
 	Bool enabled;
 	char *name;
 
