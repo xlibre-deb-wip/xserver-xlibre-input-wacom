@@ -1,3 +1,9 @@
+xf86-input-wacom (0.15.0+20120515-1) unstable; urgency=low
+
+  * New upstream snapshot.  Closes: #656563  Possibly Closes: #658053
+
+ -- Ron Lee <ron@debian.org>  Wed, 23 May 2012 08:50:01 +0930
+
 xf86-input-wacom (0.12.0-1) unstable; urgency=low
 
   * Adds support for many new devices, and better support for finger input.
