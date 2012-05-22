@@ -44,7 +44,7 @@ xf86ReplaceIntOption(OPTTYPE optlist, const char *name, const int val)
 }
 
 _X_EXPORT char *
-xf86SetStrOption(OPTTYPE optlist, const char *name, char *deflt)
+xf86SetStrOption(OPTTYPE optlist, const char *name, CONST char *deflt)
 {
     return NULL;
 }
@@ -60,7 +60,7 @@ xf86AddNewOption(OPTTYPE head, const char *name, const char *val)
 {
     return NULL;
 }
-_X_EXPORT char *
+_X_EXPORT CONST char *
 xf86FindOptionValue(OPTTYPE options, const char *name)
 {
     return NULL;
@@ -461,3 +461,38 @@ void
 xf86UnblockSIGIO (int wasset)
 {
 }
+
+/* This is not the same as the X server one, but it'll do for the tests */
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 14
+typedef struct _InputOption {
+    struct _InputOption *next;
+    char *key;
+    char *value;
+} InputOption;
+
+InputOption*
+input_option_new(InputOption *list, const char *key, const char *value)
+{
+	InputOption *new;
+
+	new = calloc(1, sizeof(InputOption));
+	new->key = strdup(key);
+	new->value = strdup(value);
+	new->next = list;
+	return new;
+}
+
+void
+input_option_free_list(InputOption **opts)
+{
+	InputOption *tmp = *opts;
+	while(*opts)
+	{
+		tmp = (*opts)->next;
+		free((*opts)->key);
+		free((*opts)->value);
+		free((*opts));
+		*opts = tmp;
+	}
+}
+#endif

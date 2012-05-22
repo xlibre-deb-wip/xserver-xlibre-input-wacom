@@ -191,6 +191,15 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 
 	switch (priv->common->tablet_id)
 	{
+		case 0xF4:  /* Cintiq 24HD */
+			TabletSetFeature(priv->common, WCM_DUALRING);
+			/* fall through */
+
+		case 0x26:  /* I5 */
+		case 0x27:  /* I5 */
+		case 0x28:  /* I5 */
+		case 0x29:  /* I5 */
+		case 0x2A:  /* I5 */
 		case 0xB8:  /* I4 */
 		case 0xB9:  /* I4 */
 		case 0xBA:  /* I4 */
@@ -231,6 +240,7 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 		case 0x37:  /* PL700 */
 		case 0x38:  /* PL510 */
 		case 0x39:  /* PL710 */
+		case 0x3A:  /* DTI520 */
 		case 0xC0:  /* DTF720 */
 		case 0xC2:  /* DTF720a */
 		case 0xC4:  /* DTF521 */
@@ -260,13 +270,12 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 		case 0xE2: /* TPC with 2FGT */
 		case 0xE3: /* TPC with 2FGT */
 		case 0xE6: /* TPC with 2FGT */
-			TabletSetFeature(priv->common, WCM_TPC);
-			break;
-
 		case 0x93: /* TPC with 1FGT */
 		case 0x9A: /* TPC with 1FGT */
+		case 0xED: /* TPC with 1FGT */
 		case 0x90: /* TPC */
 		case 0x97: /* TPC */
+		case 0xEF: /* TPC */
 			TabletSetFeature(priv->common, WCM_TPC);
 			break;
 
@@ -626,6 +635,7 @@ int wcmParseSerials (InputInfoPtr pInfo)
 			{
 				xf86Msg(X_ERROR, "%s: %s is invalid serial string.\n",
 					pInfo->name, tok);
+				free(ser);
 				return 1;
 			}
 
@@ -678,7 +688,9 @@ int wcmParseSerials (InputInfoPtr pInfo)
 }
 
 /**
- * Parse the options for this device.
+ * Parse the pre-init options for this device. Most useful for options
+ * needed to properly init a device (baud rate for example).
+ *
  * Note that parameters is_primary and is_dependent are mutually exclusive,
  * though both may be false in the case of an xorg.conf device.
  *
@@ -688,7 +700,8 @@ int wcmParseSerials (InputInfoPtr pInfo)
  * otherwise.
  * @retvalue True on success or False otherwise.
  */
-Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
+Bool wcmPreInitParseOptions(InputInfoPtr pInfo, Bool is_primary,
+			    Bool is_dependent)
 {
 	WacomDevicePtr  priv = (WacomDevicePtr)pInfo->private;
 	WacomCommonPtr  common = priv->common;
@@ -722,8 +735,8 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 	 */
 	if (IsPad(priv))
 	{
-		priv->wheelup = 4;
-		priv->wheeldn = 5;
+		priv->wheelup = priv->wheel2up = 4;
+		priv->wheeldn = priv->wheel2dn = 5;
 		set_absolute(pInfo, TRUE);
 	}
 
@@ -844,8 +857,6 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 	common->wcmThreshold = xf86SetIntOption(pInfo->options, "Threshold",
 			common->wcmThreshold);
 
-	common->wcmMaxZ = xf86SetIntOption(pInfo->options, "MaxZ",
-					   common->wcmMaxZ);
 	if (xf86SetBoolOption(pInfo->options, "ButtonsOnly", 0))
 		priv->flags |= BUTTONS_ONLY_FLAG;
 
@@ -897,17 +908,9 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 			xf86Msg(X_WARNING, "%s: Touch gesture option can only "
 				"be set by a touch tool.\n", pInfo->name);
 
-		common->wcmGestureParameters.wcmZoomDistance =
-			xf86SetIntOption(pInfo->options, "ZoomDistance",
-			common->wcmGestureParameters.wcmZoomDistanceDefault);
-
-		common->wcmGestureParameters.wcmScrollDistance =
-			xf86SetIntOption(pInfo->options, "ScrollDistance",
-			common->wcmGestureParameters.wcmScrollDistanceDefault);
-
 		common->wcmGestureParameters.wcmTapTime =
 			xf86SetIntOption(pInfo->options, "TapTime",
-			common->wcmGestureParameters.wcmTapTimeDefault);
+			common->wcmGestureParameters.wcmTapTime);
 	}
 
 	/* Swap stylus buttons 2 and 3 for Tablet PCs */
@@ -932,6 +935,59 @@ Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent)
 error:
 	free(tool);
 	return FALSE;
+}
+
+/* The values were based on trail and error. */
+#define WCM_BAMBOO3_MAXX 4096.0
+#define WCM_BAMBOO3_ZOOM_DISTANCE 180.0
+#define WCM_BAMBOO3_SCROLL_DISTANCE 80.0
+#define WCM_BAMBOO3_SCROLL_SPREAD_DISTANCE 350.0
+
+/**
+ * Parse post-init options for this device. Useful for overriding HW
+ * specific options computed during init phase (HW distances for example).
+ *
+ * Note that parameters is_primary and is_dependent are mutually exclusive,
+ * though both may be false in the case of an xorg.conf device.
+ *
+ * @param is_primary True if the device is the parent device for
+ * hotplugging, False if the device is a depent or xorg.conf device.
+ * @param is_hotplugged True if the device is a dependent device, FALSE
+ * otherwise.
+ * @retvalue True on success or False otherwise.
+ */
+Bool wcmPostInitParseOptions(InputInfoPtr pInfo, Bool is_primary,
+			     Bool is_dependent)
+{
+	WacomDevicePtr  priv = (WacomDevicePtr)pInfo->private;
+	WacomCommonPtr  common = priv->common;
+
+	common->wcmMaxZ = xf86SetIntOption(pInfo->options, "MaxZ",
+					   common->wcmMaxZ);
+
+	/* 2FG touch device */
+	if (TabletHasFeature(common, WCM_2FGT) && IsTouch(priv))
+	{
+		int zoom_distance = common->wcmMaxTouchX *
+			(WCM_BAMBOO3_ZOOM_DISTANCE / WCM_BAMBOO3_MAXX);
+		int scroll_distance = common->wcmMaxTouchX *
+			(WCM_BAMBOO3_SCROLL_DISTANCE / WCM_BAMBOO3_MAXX);
+
+		common->wcmGestureParameters.wcmZoomDistance =
+			xf86SetIntOption(pInfo->options, "ZoomDistance",
+					 zoom_distance);
+
+		common->wcmGestureParameters.wcmScrollDistance =
+			xf86SetIntOption(pInfo->options, "ScrollDistance",
+					 scroll_distance);
+
+		common->wcmGestureParameters.wcmMaxScrollFingerSpread =
+			common->wcmMaxTouchX *
+			(WCM_BAMBOO3_SCROLL_SPREAD_DISTANCE / WCM_BAMBOO3_MAXX);
+	}
+
+
+	return TRUE;
 }
 
 /* vim: set noexpandtab tabstop=8 shiftwidth=8: */

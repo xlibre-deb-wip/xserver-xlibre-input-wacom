@@ -139,10 +139,10 @@ extern int wcmNeedAutoHotplug(InputInfoPtr pInfo, const char **type);
 extern void wcmHotplugOthers(InputInfoPtr pInfo, const char *basename);
 
 /* setup */
-extern Bool wcmParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent);
+extern Bool wcmPreInitParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent);
+extern Bool wcmPostInitParseOptions(InputInfoPtr pInfo, Bool is_primary, Bool is_dependent);
 extern int wcmParseSerials(InputInfoPtr pinfo);
 extern void wcmInitialCoordinates(InputInfoPtr pInfo, int axes);
-extern void wcmInitialScreens(InputInfoPtr pInfo);
 extern void wcmInitialScreens(InputInfoPtr pInfo);
 
 extern int wcmDevSwitchModeCall(InputInfoPtr pInfo, int mode);
@@ -151,7 +151,6 @@ extern int wcmDevSwitchMode(ClientPtr client, DeviceIntPtr dev, int mode);
 /* run-time modifications */
 extern void wcmChangeScreen(InputInfoPtr pInfo, int value);
 extern int wcmTilt2R(int x, int y, double offset);
-extern void wcmGestureFilter(WacomDevicePtr priv, int channel);
 extern void wcmEmitKeycode(DeviceIntPtr keydev, int keycode, int state);
 extern void wcmSoftOutEvent(InputInfoPtr pInfo);
 
@@ -169,7 +168,7 @@ extern int wcmGetProperty(DeviceIntPtr dev, Atom property);
 extern int wcmDeleteProperty(DeviceIntPtr dev, Atom property);
 extern void InitWcmDeviceProperties(InputInfoPtr pInfo);
 extern void wcmUpdateRotationProperty(WacomDevicePtr priv);
-extern void wcmUpdateSerial(InputInfoPtr pInfo, unsigned int serial);
+extern void wcmUpdateSerial(InputInfoPtr pInfo, unsigned int serial, int id);
 
 /* Utility functions */
 extern Bool is_absolute(InputInfoPtr pInfo);
