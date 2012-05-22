@@ -33,8 +33,10 @@
 /* 32 bit, 4 values */
 #define WACOM_PROP_PRESSURECURVE "Wacom Pressurecurve"
 
-/* CARD32, 4 values, tablet id, old serial, old hw device id, current serial
-   read-only */
+/* CARD32, 5 values, tablet id, old serial, old hw device id,
+   current serial, current device id
+   read-only
+ */
 #define WACOM_PROP_SERIALIDS "Wacom Serial IDs"
 
 /* CARD32, 1 value */
@@ -46,9 +48,9 @@
   */
 #define WACOM_PROP_STRIPBUTTONS "Wacom Strip Buttons"
 
-/* 8 bit, 4 values, rel wheel up, rel wheel down, abs wheel up, abs wheel down
+/* 8 bit, 6 values, rel wheel up, rel wheel down, abs wheel up, abs wheel down, abs wheel 2 up, abs wheel 2 down
    OR
-   Atom, 4 values , rel wheel up, rel wheel down, abs wheel up, abs wheel down
+   Atom, 6 values , rel wheel up, rel wheel down, abs wheel up, abs wheel down, abs wheel 2 up, abs wheel 2 down
  */
 #define WACOM_PROP_WHEELBUTTONS "Wacom Wheel Buttons"
 

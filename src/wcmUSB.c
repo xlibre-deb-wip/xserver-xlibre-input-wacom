@@ -40,6 +40,9 @@ typedef struct {
 	int wcmPrevChannel;
 	int wcmEventCnt;
 	struct input_event wcmEvents[MAX_USB_EVENTS];
+	int nbuttons;                /* total number of buttons */
+	int npadkeys;                /* number of pad keys in the above array */
+	int padkey_code[WCM_MAX_BUTTONS];/* hardware codes for buttons */
 } wcmUSBData;
 
 static Bool usbDetect(InputInfoPtr);
@@ -95,6 +98,7 @@ DEFINE_MODEL(usbIntuos,		"USB Intuos1",		5);
 DEFINE_MODEL(usbIntuos2,	"USB Intuos2",		5);
 DEFINE_MODEL(usbIntuos3,	"USB Intuos3",		5);
 DEFINE_MODEL(usbIntuos4,	"USB Intuos4",		5);
+DEFINE_MODEL(usbIntuos5,	"USB Intuos5",		5);
 DEFINE_MODEL(usbVolito,		"USB Volito",		4);
 DEFINE_MODEL(usbVolito2,	"USB Volito2",		4);
 DEFINE_MODEL(usbCintiqV5,	"USB CintiqV5",		5);
@@ -219,6 +223,7 @@ static struct
 	{ WACOM_VENDOR_ID, 0x37,  20000,  20000, &usbCintiq     }, /* PL700 */
 	{ WACOM_VENDOR_ID, 0x38,  20000,  20000, &usbCintiq     }, /* PL510 */
 	{ WACOM_VENDOR_ID, 0x39,  20000,  20000, &usbCintiq     }, /* PL710 */
+	{ WACOM_VENDOR_ID, 0x3A,  20000,  20000, &usbCintiq     }, /* DTI520 */
 	{ WACOM_VENDOR_ID, 0xC0,  20000,  20000, &usbCintiq     }, /* DTF720 */
 	{ WACOM_VENDOR_ID, 0xC2,  20000,  20000, &usbCintiq     }, /* DTF720a */
 	{ WACOM_VENDOR_ID, 0xC4,  20000,  20000, &usbCintiq     }, /* DTF521 */
@@ -260,10 +265,17 @@ static struct
 	{ WACOM_VENDOR_ID, 0xBC, 200000, 200000, &usbIntuos4    }, /* Intuos4 WL USB Endpoint */
 	{ WACOM_VENDOR_ID, 0xBD, 200000, 200000, &usbIntuos4    }, /* Intuos4 WL Bluetooth Endpoint */
 
+	{ WACOM_VENDOR_ID, 0x26, 200000, 200000, &usbIntuos5    }, /* Intuos5 touch S */
+	{ WACOM_VENDOR_ID, 0x27, 200000, 200000, &usbIntuos5    }, /* Intuos5 touch M */
+	{ WACOM_VENDOR_ID, 0x28, 200000, 200000, &usbIntuos5    }, /* Intuos5 touch L */
+	{ WACOM_VENDOR_ID, 0x29, 200000, 200000, &usbIntuos5    }, /* Intuos5 S */
+	{ WACOM_VENDOR_ID, 0x2A, 200000, 200000, &usbIntuos5    }, /* Intuos5 M */
+
 	{ WACOM_VENDOR_ID, 0x3F, 200000, 200000, &usbCintiqV5   }, /* Cintiq 21UX */
 	{ WACOM_VENDOR_ID, 0xC5, 200000, 200000, &usbCintiqV5   }, /* Cintiq 20WSX */
 	{ WACOM_VENDOR_ID, 0xC6, 200000, 200000, &usbCintiqV5   }, /* Cintiq 12WX */
 	{ WACOM_VENDOR_ID, 0xCC, 200000, 200000, &usbCintiqV5   }, /* Cintiq 21UX2 */
+	{ WACOM_VENDOR_ID, 0xF4, 200000, 200000, &usbCintiqV5   }, /* Cintiq 24HD */
 
 	{ WACOM_VENDOR_ID, 0x90, 100000, 100000, &usbTabletPC   }, /* TabletPC 0x90 */
 	{ WACOM_VENDOR_ID, 0x93, 100000, 100000, &usbTabletPC   }, /* TabletPC 0x93 */
@@ -273,6 +285,8 @@ static struct
 	{ WACOM_VENDOR_ID, 0xE2, 100000, 100000, &usbTabletPC   }, /* TabletPC 0xE2 */
 	{ WACOM_VENDOR_ID, 0xE3, 100000, 100000, &usbTabletPC   }, /* TabletPC 0xE3 */
 	{ WACOM_VENDOR_ID, 0xE6, 100000, 100000, &usbTabletPC   }, /* TabletPC 0xE6 */
+	{ WACOM_VENDOR_ID, 0xED, 100000, 100000, &usbTabletPC   }, /* TabletPC 0xED */
+	{ WACOM_VENDOR_ID, 0xEF, 100000, 100000, &usbTabletPC   }, /* TabletPC 0xEF */
 
 	/* IDs from Waltop's driver, available http://www.waltop.com.tw/download.asp?lv=0&id=2.
 	   Accessed 8 Apr 2010, driver release date 2009/08/11, fork of linuxwacom 0.8.4.
@@ -319,6 +333,7 @@ static Bool usbWcmInit(InputInfoPtr pInfo, char* id, float *version)
 	struct input_id sID;
 	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
 	WacomCommonPtr common = priv->common;
+	wcmUSBData *usbdata;
 
 	DBG(1, priv, "initializing USB tablet\n");
 
@@ -330,6 +345,7 @@ static Bool usbWcmInit(InputInfoPtr pInfo, char* id, float *version)
 		return !Success;
 	}
 
+	usbdata = common->private;
 	*version = 0.0;
 
 	/* fetch vendor, product, and model name */
@@ -354,25 +370,25 @@ static Bool usbWcmInit(InputInfoPtr pInfo, char* id, float *version)
 	}
 
 	/* Find out supported button codes. */
-	common->npadkeys = 0;
+	usbdata->npadkeys = 0;
 	for (i = 0; i < ARRAY_SIZE(padkey_codes); i++)
 		if (ISBITSET (common->wcmKeys, padkey_codes [i]))
-			common->padkey_code [common->npadkeys++] = padkey_codes [i];
+			usbdata->padkey_code [usbdata->npadkeys++] = padkey_codes [i];
 
 	if (!(ISBITSET (common->wcmKeys, BTN_TOOL_MOUSE)))
 	{
 		/* If mouse buttons detected but no mouse tool
 		 * then they must be associated with pad buttons.
 		 */
-		for (i = ARRAY_SIZE(mouse_codes); i > 0; i--)
+		for (i = ARRAY_SIZE(mouse_codes) - 1; i > 0; i--)
 			if (ISBITSET(common->wcmKeys, mouse_codes[i]))
 				break;
 
 		/* Make sure room for fixed map mouse buttons.  This
 		 * means mappings may overlap with padkey_codes[].
 		 */
-		if (i != 0 && common->npadkeys < WCM_USB_MAX_MOUSE_BUTTONS)
-			common->npadkeys = WCM_USB_MAX_MOUSE_BUTTONS;
+		if (i != 0 && usbdata->npadkeys < WCM_USB_MAX_MOUSE_BUTTONS)
+			usbdata->npadkeys = WCM_USB_MAX_MOUSE_BUTTONS;
 	}
 
 	/* nbuttons tracks maximum buttons on all tools (stylus/mouse).
@@ -381,9 +397,9 @@ static Bool usbWcmInit(InputInfoPtr pInfo, char* id, float *version)
 	 * Stylus support tip and 2 stlyus buttons.
 	 */
 	if (ISBITSET (common->wcmKeys, BTN_TOOL_MOUSE))
-		common->nbuttons = WCM_USB_MAX_MOUSE_BUTTONS;
+		usbdata->nbuttons = WCM_USB_MAX_MOUSE_BUTTONS;
 	else
-		common->nbuttons = WCM_USB_MAX_STYLUS_BUTTONS;
+		usbdata->nbuttons = WCM_USB_MAX_STYLUS_BUTTONS;
 
 	return Success;
 }
@@ -599,12 +615,13 @@ static int usbDetectConfig(InputInfoPtr pInfo)
 {
 	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
 	WacomCommonPtr common = priv->common;
+	wcmUSBData *usbdata = common->private;
 
 	DBG(10, common, "\n");
 	if (IsPad (priv))
-		priv->nbuttons = common->npadkeys;
+		priv->nbuttons = usbdata->npadkeys;
 	else
-		priv->nbuttons = common->nbuttons;
+		priv->nbuttons = usbdata->nbuttons;
 
 	if (!common->wcmCursorProxoutDist)
 		common->wcmCursorProxoutDist
@@ -1043,7 +1060,11 @@ static int usbParseAbsEvent(WacomCommonPtr common,
 			ds->abswheel = event->value;
 			break;
 		case ABS_THROTTLE:
-			ds->throttle = event->value;
+			/* 2nd touch ring comes in over ABS_THROTTLE for 24HD */
+			if (common->vendor_id == WACOM_VENDOR_ID && common->tablet_id == 0xF4)
+				ds->abswheel2 = event->value;
+			else
+				ds->throttle = event->value;
 			break;
 		case ABS_MISC:
 			ds->proximity = (event->value != 0);
@@ -1298,6 +1319,7 @@ static int usbParseBTNEvent(WacomCommonPtr common,
 {
 	int nkeys;
 	int change = 1;
+	wcmUSBData *usbdata = common->private;
 
 	switch (event->code)
 	{
@@ -1324,15 +1346,15 @@ static int usbParseBTNEvent(WacomCommonPtr common,
 			break;
 
 		default:
-			for (nkeys = 0; nkeys < common->npadkeys; nkeys++)
+			for (nkeys = 0; nkeys < usbdata->npadkeys; nkeys++)
 			{
-				if (event->code == common->padkey_code[nkeys])
+				if (event->code == usbdata->padkey_code[nkeys])
 				{
 					ds->buttons = mod_buttons(ds->buttons, nkeys, event->value);
 					break;
 				}
 			}
-			if (nkeys >= common->npadkeys)
+			if (nkeys >= usbdata->npadkeys)
 				change = 0;
 	}
 	return change;
@@ -1551,11 +1573,18 @@ static void usbDispatchEvents(InputInfoPtr pInfo)
 	if (!ds->device_type && !dslast.proximity)
 	{
 		unsigned long keys[NBITS(KEY_MAX)] = { 0 };
+		int rc;
 
 		/* Retrieve the type by asking a resend from the kernel */
-		ioctl(common->fd, EVIOCGKEY(sizeof(keys)), keys);
+		rc = ioctl(common->fd, EVIOCGKEY(sizeof(keys)), keys);
+		if (rc == -1)
+		{
+			xf86Msg(X_ERROR, "%s: failed to retrieve key bits\n",
+					pInfo->name);
+			return;
+		}
 
-		for (i=0; i < ARRAY_SIZE(wcmTypeToKey); i++)
+		for (i = 0; i < ARRAY_SIZE(wcmTypeToKey); i++)
 		{
 			if (ISBITSET(keys, wcmTypeToKey[i].tool_key))
 			{

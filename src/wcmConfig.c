@@ -80,6 +80,8 @@ static int wcmAllocate(InputInfoPtr pInfo)
 	 * later in wcmParseOptions, when we have IsPad() available */
 	priv->wheelup = 0;			/* Default absolute wheel up event */
 	priv->wheeldn = 0;			/* Default absolute wheel down event */
+	priv->wheel2up = 0;                     /* Default absolute wheel2 up event */
+	priv->wheel2dn = 0;                     /* Default absolute wheel2 down event */
 	priv->striplup = 4;			/* Default left strip up event */
 	priv->stripldn = 5;			/* Default left strip down event */
 	priv->striprup = 4;			/* Default right strip up event */
@@ -223,10 +225,12 @@ static void wcmUninit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 	WacomDevicePtr priv = (WacomDevicePtr) pInfo->private;
 	WacomDevicePtr dev;
 	WacomDevicePtr *prev;
-	WacomCommonPtr common = priv->common;
+	WacomCommonPtr common;
 
 	if (!priv)
 		goto out;
+
+	common = priv->common;
 
 	DBG(1, priv, "\n");
 
@@ -548,10 +552,13 @@ static int wcmPreInit(InputDriverPtr drv, InputInfoPtr pInfo, int flags)
 	if (!wcmSetType(pInfo, type))
 		goto SetupProc_fail;
 
-	if (!wcmParseOptions(pInfo, need_hotplug, is_dependent))
+	if (!wcmPreInitParseOptions(pInfo, need_hotplug, is_dependent))
 		goto SetupProc_fail;
 
 	if (!wcmInitModel(pInfo))
+		goto SetupProc_fail;
+
+	if (!wcmPostInitParseOptions(pInfo, need_hotplug, is_dependent))
 		goto SetupProc_fail;
 
 	if (need_hotplug)

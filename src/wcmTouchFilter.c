@@ -1,5 +1,6 @@
 /*
  * Copyright 2009 - 2010 by Ping Cheng, Wacom. <pingc@wacom.com>
+ * Copyright 2011 by Alexey Osipov. <simba@lerlan.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -21,10 +22,10 @@
 #endif
 
 #include "xf86Wacom.h"
+#include "wcmTouchFilter.h"
 #include <math.h>
 
 /* Defines for 2FC Gesture */
-#define WACOM_INLINE_DISTANCE        40
 #define WACOM_HORIZ_ALLOWED           1
 #define WACOM_VERT_ALLOWED            2
 #define WACOM_GESTURE_LAG_TIME       10
@@ -34,6 +35,8 @@
 #define GESTURE_SCROLL_MODE           2
 #define GESTURE_ZOOM_MODE             4
 #define GESTURE_LAG_MODE              8
+#define GESTURE_PREDRAG_MODE         16
+#define GESTURE_DRAG_MODE            32
 
 #define WCM_SCROLL_UP                 5	/* vertical up */
 #define WCM_SCROLL_DOWN               4	/* vertical down */
@@ -61,17 +64,18 @@ static Bool pointsInLine(WacomCommonPtr common, WacomDeviceState ds0,
 			WACOM_HORIZ_ALLOWED : WACOM_VERT_ALLOWED;
 	int vertical_rotated = (rotated) ?
 			WACOM_VERT_ALLOWED : WACOM_HORIZ_ALLOWED;
+	int max_spread = common->wcmGestureParameters.wcmMaxScrollFingerSpread;
 
 	if (!common->wcmGestureParameters.wcmScrollDirection)
 	{
-		if ((abs(ds0.x - ds1.x) < WACOM_INLINE_DISTANCE) &&
-			(abs(ds0.y - ds1.y) > WACOM_INLINE_DISTANCE))
+		if ((abs(ds0.x - ds1.x) < max_spread) &&
+			(abs(ds0.y - ds1.y) > max_spread))
 		{
 			common->wcmGestureParameters.wcmScrollDirection = horizon_rotated;
 			ret = TRUE;
 		}
-		if ((abs(ds0.y - ds1.y) < WACOM_INLINE_DISTANCE) &&
-			(abs(ds0.x - ds1.x) > WACOM_INLINE_DISTANCE))
+		if ((abs(ds0.y - ds1.y) < max_spread) &&
+			(abs(ds0.x - ds1.x) > max_spread))
 		{
 			common->wcmGestureParameters.wcmScrollDirection = vertical_rotated;
 			ret = TRUE;
@@ -79,12 +83,12 @@ static Bool pointsInLine(WacomCommonPtr common, WacomDeviceState ds0,
 	}
 	else if (common->wcmGestureParameters.wcmScrollDirection == vertical_rotated)
 	{
-		if (abs(ds0.y - ds1.y) < WACOM_INLINE_DISTANCE)
+		if (abs(ds0.y - ds1.y) < max_spread)
 			ret = TRUE;
 	}
 	else if (common->wcmGestureParameters.wcmScrollDirection == horizon_rotated)
 	{
-		if (abs(ds0.x - ds1.x) < WACOM_INLINE_DISTANCE)
+		if (abs(ds0.x - ds1.x) < max_spread)
 			ret = TRUE;
 	}
 	return ret;
@@ -93,19 +97,11 @@ static Bool pointsInLine(WacomCommonPtr common, WacomDeviceState ds0,
 /* send a button event */
 static void wcmSendButtonClick(WacomDevicePtr priv, int button, int state)
 {
-	int x = 0;
-	int y = 0;
 	int mode = is_absolute(priv->pInfo);
 
-	if (mode)
-	{
-		x = priv->oldX;
-		y = priv->oldY;
-	}
-
 	/* send button event in state */
-	xf86PostButtonEvent(priv->pInfo->dev, mode,button,
-		state,0,priv->naxes,x,y,0,0,0,0);
+	xf86PostButtonEventP(priv->pInfo->dev, mode,button,
+		state,0,0,0);
 
 	/* We have changed the button state (from down to up) for the device
 	 * so we need to update the record */
@@ -147,6 +143,23 @@ static void wcmFingerTapToClick(WacomDevicePtr priv)
 	}
 }
 
+static CARD32 wcmSingleFingerTapTimer(OsTimerPtr timer, CARD32 time, pointer arg)
+{
+	WacomDevicePtr priv = (WacomDevicePtr)arg;
+	WacomCommonPtr common = priv->common;
+
+	if (common->wcmGestureMode == GESTURE_PREDRAG_MODE)
+	{
+		/* left button down */
+		wcmSendButtonClick(priv, 1, 1);
+
+		/* left button up */
+		wcmSendButtonClick(priv, 1, 0);
+		common->wcmGestureMode = GESTURE_NONE_MODE;
+	}
+
+	return 0;
+}
 
 /* A single finger tap is defined as 1 finger tap that lasts less than
  * wcmTapTime.  It results in a left button press.
@@ -185,11 +198,10 @@ static void wcmSingleFingerTap(WacomDevicePtr priv)
 		    common->wcmGestureParameters.wcmTapTime &&
 		    ds[1].sample < dsLast[0].sample)
 		{
-			/* left button down */
-			wcmSendButtonClick(priv, 1, 1);
+			common->wcmGestureMode = GESTURE_PREDRAG_MODE;
 
-			/* left button up */
-			wcmSendButtonClick(priv, 1, 0);
+			/* Delay to detect possible drag operation */
+			TimerSet(NULL, 0, common->wcmGestureParameters.wcmTapTime, wcmSingleFingerTapTimer, priv);
 		}
 	}
 }
@@ -255,17 +267,19 @@ void wcmGestureFilter(WacomDevicePtr priv, int channel)
 		if (common->wcmGestureMode == GESTURE_NONE_MODE)
 			common->wcmGestureMode = GESTURE_LAG_MODE;
 	}
-	/* When only 1 finger is in proximity, it can be in either LAG mode
-	 * or NONE mode.
+	/* When only 1 finger is in proximity, it can be in either LAG mode,
+	 * NONE mode or DRAG mode.
 	 * 1 finger LAG mode is a very short time period mainly to debounce
 	 * initial touch.
-	 * NONE mode means cursor is allowed to move around.
+	 * NONE and DRAG mode means cursor is allowed to move around.
+	 * DRAG mode in addition means that left button pressed.
+	 * There is no need to bother about LAG_TIME while in DRAG mode.
 	 * TODO: This has to use dsLast[0] because of later logic that
 	 * wants mode to be NONE still when 1st entering proximity.
 	 * That could use some re-arranging/cleanup.
 	 *
 	 */
-	else if (dsLast[0].proximity)
+	else if (dsLast[0].proximity && common->wcmGestureMode != GESTURE_DRAG_MODE)
 	{
 		CARD32 ms = GetTimeInMillis();
 
@@ -304,6 +318,16 @@ void wcmGestureFilter(WacomDevicePtr priv, int channel)
 		/* initialize the cursor position */
 		if (common->wcmGestureMode == GESTURE_NONE_MODE && !channel)
 			goto ret;
+
+		/* got second touch in TapTime interval after first one,
+		 * switch to DRAG mode */
+		if (common->wcmGestureMode == GESTURE_PREDRAG_MODE)
+		{
+			/* left button down */
+			wcmSendButtonClick(priv, 1, 1);
+			common->wcmGestureMode = GESTURE_DRAG_MODE;
+			goto ret;
+		}
 	}
 
 	if (!ds[0].proximity && !ds[1].proximity)
@@ -314,6 +338,10 @@ void wcmGestureFilter(WacomDevicePtr priv, int channel)
 			/* send first finger out prox */
 			wcmSoftOutEvent(priv->pInfo);
 
+		/* if were in DRAG mode, send left button up now */
+		if (common->wcmGestureMode == GESTURE_DRAG_MODE)
+			wcmSendButtonClick(priv, 1, 0);
+
 		/* exit gesture mode when both fingers are out */
 		common->wcmGestureMode = GESTURE_NONE_MODE;
 		common->wcmGestureParameters.wcmScrollDirection = 0;
@@ -321,7 +349,7 @@ void wcmGestureFilter(WacomDevicePtr priv, int channel)
 		goto ret;
 	}
 
-	if (!(common->wcmGestureMode & (GESTURE_SCROLL_MODE | GESTURE_ZOOM_MODE)))
+	if (!(common->wcmGestureMode & (GESTURE_SCROLL_MODE | GESTURE_ZOOM_MODE)) && channel)
 		wcmFingerTapToClick(priv);
 
 	/* Change mode happens only when both fingers are out */
@@ -413,6 +441,7 @@ static void wcmFingerScroll(WacomDevicePtr priv)
 	int midPoint_old = 0;
 	int i = 0, dist = 0;
 	WacomFilterState filterd;  /* borrow this struct */
+	int max_spread = common->wcmGestureParameters.wcmMaxScrollFingerSpread;
 
 	DBG(10, priv, "\n");
 
@@ -420,7 +449,7 @@ static void wcmFingerScroll(WacomDevicePtr priv)
 	{
 		if (abs(touchDistance(ds[0], ds[1]) -
 			touchDistance(common->wcmGestureState[0],
-			common->wcmGestureState[1])) < WACOM_INLINE_DISTANCE)
+			common->wcmGestureState[1])) < max_spread)
 		{
 			/* two fingers stay close to each other all the time and
 			 * move in vertical or horizontal direction together
@@ -510,6 +539,7 @@ static void wcmFingerZoom(WacomDevicePtr priv)
 	int count, button;
 	int dist = touchDistance(common->wcmGestureState[0],
 			common->wcmGestureState[1]);
+	int max_spread = common->wcmGestureParameters.wcmMaxScrollFingerSpread;
 
 	DBG(10, priv, "\n");
 
@@ -519,13 +549,13 @@ static void wcmFingerZoom(WacomDevicePtr priv)
 		if (abs(touchDistance(ds[0], ds[1]) -
 			touchDistance(common->wcmGestureState[0],
 				      common->wcmGestureState[1])) >
-			(3 * WACOM_INLINE_DISTANCE))
+			(3 * max_spread))
 		{
 			/* left button might be down, send it up first */
 			wcmSendButtonClick(priv, 1, 0);
 
 			/* fingers moved apart more than 3 times
-			 * WACOM_INLINE_DISTANCE, zoom mode is entered */
+			 * wcmMaxScrollFingerSpread, zoom mode is entered */
 			common->wcmGestureMode = GESTURE_ZOOM_MODE;
 		}
 	}
@@ -564,6 +594,11 @@ static void wcmFingerZoom(WacomDevicePtr priv)
 		wcmSendButtonClick (priv, button, 0);
 		wcmEmitKeycode (priv->pInfo->dev, 37 /*XK_Control_L*/, 0);
 	}
+}
+
+Bool wcmTouchNeedSendEvents(WacomCommonPtr common)
+{
+	return !(common->wcmGestureMode & ~GESTURE_DRAG_MODE);
 }
 
 /* vim: set noexpandtab tabstop=8 shiftwidth=8: */
