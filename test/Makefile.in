@@ -55,7 +55,8 @@ am__libwacom_test_la_SOURCES_DIST = $(top_srcdir)/src/xf86Wacom.c \
 	$(top_srcdir)/src/xf86WacomDefs.h $(top_srcdir)/src/wcmUSB.c \
 	$(top_srcdir)/src/wcmXCommand.c \
 	$(top_srcdir)/src/wcmValidateDevice.c \
-	$(top_srcdir)/src/wcmTouchFilter.c
+	$(top_srcdir)/src/wcmTouchFilter.c \
+	$(top_srcdir)/src/wcmTouchFilter.h
 @UNITTESTS_TRUE@am__objects_1 = libwacom_test_la-xf86Wacom.lo \
 @UNITTESTS_TRUE@	libwacom_test_la-wcmCommon.lo \
 @UNITTESTS_TRUE@	libwacom_test_la-wcmConfig.lo \
@@ -274,7 +275,8 @@ top_srcdir = @top_srcdir@
 @UNITTESTS_TRUE@	$(top_srcdir)/src/wcmUSB.c \
 @UNITTESTS_TRUE@	$(top_srcdir)/src/wcmXCommand.c \
 @UNITTESTS_TRUE@	$(top_srcdir)/src/wcmValidateDevice.c \
-@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmTouchFilter.c
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmTouchFilter.c \
+@UNITTESTS_TRUE@	$(top_srcdir)/src/wcmTouchFilter.h
 
 @UNITTESTS_TRUE@check_LTLIBRARIES = libwacom-test.la
 @UNITTESTS_TRUE@libwacom_test_la_SOURCES = $(DRIVER_SOURCES)
