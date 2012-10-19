@@ -1,3 +1,11 @@
+xf86-input-wacom (0.15.0+20120515-2) unstable; urgency=low
+
+  * Remove the old udev rules file that was orphaned by dh_installudev fail
+    if it remains unmodified.  If it was modified, people will need to edit
+    and keep their own rules there anyway.  Closes: #565126
+
+ -- Ron Lee <ron@debian.org>  Fri, 19 Oct 2012 23:38:24 +1030
+
 xf86-input-wacom (0.15.0+20120515-1) unstable; urgency=low
 
   * New upstream snapshot.  Closes: #656563  Possibly Closes: #658053
