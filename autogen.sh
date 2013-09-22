@@ -10,4 +10,4 @@ autoreconf -v --install || exit 1
 rm -rf autom4te.cache m4
 cd $ORIGDIR || exit $?
 
-#$srcdir/configure --enable-maintainer-mode "$@"
+#$srcdir/configure "$@"
