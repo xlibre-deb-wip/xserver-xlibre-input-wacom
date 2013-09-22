@@ -23,7 +23,6 @@
 #include <xorg-server.h>
 #include <xorgVersion.h>
 
-#include <wacom-util.h>
 #include "Xwacom.h"
 
 /* max number of input events to read in one read call */
@@ -37,6 +36,13 @@
 #include <xf86Xinput.h>
 #include <mipointer.h>
 #include <X11/Xatom.h>
+
+#include <wacom-util.h>
+
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 18
+#define LogMessageVerbSigSafe xf86MsgVerb
+#endif
+
 /*****************************************************************************
  * Unit test hack
  ****************************************************************************/
@@ -56,9 +62,9 @@
 #define DBG(lvl, priv, ...) \
 	do { \
 		if ((lvl) <= priv->debugLevel) { \
-			xf86Msg(X_INFO, "%s (%d:%s): ", \
+			LogMessageVerbSigSafe(X_INFO, -1, "%s (%d:%s): ", \
 				((WacomDeviceRec*)priv)->name, lvl, __func__); \
-			xf86Msg(X_NONE, __VA_ARGS__); \
+			LogMessageVerbSigSafe(X_NONE, -1, __VA_ARGS__); \
 		} \
 	} while (0)
 #else
@@ -131,11 +137,11 @@ void wcmMappingFactor(InputInfoPtr pInfo);
 /* validation */
 extern Bool wcmIsAValidType(InputInfoPtr pInfo, const char* type);
 extern Bool wcmIsWacomDevice (char* fname);
-extern int wcmIsDuplicate(char* device, InputInfoPtr pInfo);
+extern int wcmIsDuplicate(const char* device, InputInfoPtr pInfo);
 extern int wcmDeviceTypeKeys(InputInfoPtr pInfo);
 
 /* hotplug */
-extern int wcmNeedAutoHotplug(InputInfoPtr pInfo, const char **type);
+extern int wcmNeedAutoHotplug(InputInfoPtr pInfo, char **type);
 extern void wcmHotplugOthers(InputInfoPtr pInfo, const char *basename);
 
 /* setup */
@@ -176,6 +182,7 @@ extern void set_absolute(InputInfoPtr pInfo, Bool absolute);
 extern WacomCommonPtr wcmRefCommon(WacomCommonPtr common);
 extern void wcmFreeCommon(WacomCommonPtr *common);
 extern WacomCommonPtr wcmNewCommon(void);
+extern void usbListModels(void);
 
 enum WacomSuppressMode {
 	SUPPRESS_NONE = 8,	/* Process event normally */

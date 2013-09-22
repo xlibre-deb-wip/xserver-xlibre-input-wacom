@@ -110,12 +110,12 @@ static void memdump(InputInfoPtr pInfo, char *buffer, unsigned int len)
 	/* can't use DBG macro here, need to do it manually. */
 	for (i = 0 ; i < len && common->debugLevel >= 10; i++)
 	{
-		xf86Msg(X_NONE, "%#hhx ", buffer[i]);
+		LogMessageVerbSigSafe(X_NONE, 0, "%#hhx ", buffer[i]);
 		if (i % 8 == 7)
-			xf86Msg(X_NONE, "\n");
+			LogMessageVerbSigSafe(X_NONE, 0, "\n");
 	}
 
-	xf86Msg(X_NONE, "\n");
+	LogMessageVerbSigSafe(X_NONE, 0, "\n");
 #endif
 }
 
@@ -164,8 +164,8 @@ static int wcmSerialValidate(InputInfoPtr pInfo, const unsigned char* data)
 	 * header byte */
 	if (!(data[0] & HEADER_BIT))
 	{
-		int n = wcmSkipInvalidBytes(data, common->wcmPktLength);
-		xf86Msg(X_WARNING,
+		n = wcmSkipInvalidBytes(data, common->wcmPktLength);
+		LogMessageVerbSigSafe(X_WARNING, 0,
 			"%s: missing header bit. skipping %d bytes.\n",
 			pInfo->name, n);
 		return n;
@@ -178,7 +178,7 @@ static int wcmSerialValidate(InputInfoPtr pInfo, const unsigned char* data)
 	n = wcmSkipInvalidBytes(&data[1], common->wcmPktLength - 1);
 	n += 1; /* the header byte we already checked */
 	if (n != common->wcmPktLength) {
-		xf86Msg(X_WARNING, "%s: bad data at %d v=%x l=%d\n", pInfo->name,
+		LogMessageVerbSigSafe(X_WARNING, 0, "%s: bad data at %d v=%x l=%d\n", pInfo->name,
 			n, data[n], common->wcmPktLength);
 		return n;
 	}
@@ -405,8 +405,18 @@ static int isdv4GetRanges(InputInfoPtr pInfo)
 		common->wcmMaxY = reply.y_max;
 		if (reply.tilt_x_max && reply.tilt_y_max)
 		{
-			common->wcmMaxtiltX = reply.tilt_x_max;
-			common->wcmMaxtiltY = reply.tilt_y_max;
+			common->wcmTiltOffX = 0 - reply.tilt_x_max / 2;
+			common->wcmTiltFactX = 1.0;
+			common->wcmTiltMinX = 0 + common->wcmTiltOffX;
+			common->wcmTiltMaxX = reply.tilt_x_max +
+					      common->wcmTiltOffX;
+
+			common->wcmTiltOffY = 0 - reply.tilt_y_max / 2;
+			common->wcmTiltFactY = 1.0;
+			common->wcmTiltMinY = 0 + common->wcmTiltOffY;
+			common->wcmTiltMaxY = reply.tilt_y_max +
+					      common->wcmTiltOffY;
+
 			common->wcmFlags |= TILT_ENABLED_FLAG;
 		}
 
@@ -605,8 +615,8 @@ static int isdv4ParseTouchPacket(InputInfoPtr pInfo, const unsigned char *data,
 	rc = isdv4ParseTouchData(data, len, common->wcmPktLength, &touchdata);
 	if (rc == -1)
 	{
-		xf86Msg(X_ERROR, "%s: failed to parse touch data.\n",
-				pInfo->name);
+		LogMessageVerbSigSafe(X_ERROR, 0, "%s: failed to parse touch data.\n",
+				      pInfo->name);
 		return -1;
 	}
 
@@ -615,6 +625,7 @@ static int isdv4ParseTouchPacket(InputInfoPtr pInfo, const unsigned char *data,
 	ds->proximity = touchdata.status;
 	ds->device_type = TOUCH_ID;
 	ds->device_id = TOUCH_DEVICE_ID;
+	ds->serial_num = 1;
 
 	if (common->wcmPktLength == ISDV4_PKGLEN_TOUCH2FG)
 	{
@@ -638,6 +649,7 @@ static int isdv4ParseTouchPacket(InputInfoPtr pInfo, const unsigned char *data,
 			ds->y = touchdata.finger2.y;
 			ds->device_type = TOUCH_ID;
 			ds->device_id = TOUCH_DEVICE_ID;
+			ds->serial_num = 2;
 			ds->proximity = touchdata.finger2.status;
 			/* time stamp for 2FGT gesture events */
 			if ((ds->proximity && !lastTemp->proximity) ||
@@ -676,7 +688,8 @@ static int isdv4ParsePenPacket(InputInfoPtr pInfo, const unsigned char *data,
 
 	if (rc == -1)
 	{
-		xf86Msg(X_ERROR, "%s: failed to parse coordinate data.\n", pInfo->name);
+		LogMessageVerbSigSafe(X_ERROR, 0,
+				      "%s: failed to parse coordinate data.\n", pInfo->name);
 		return -1;
 	}
 
@@ -780,6 +793,7 @@ static int isdv4Parse(InputInfoPtr pInfo, const unsigned char* data, int len)
 			/* let touch go */
 			WacomDeviceState out = { 0 };
 			out.device_type = TOUCH_ID;
+			out.serial_num = 1;
 			wcmEvent(common, channel, &out);
 		}
 	}
@@ -796,8 +810,10 @@ static int isdv4Parse(InputInfoPtr pInfo, const unsigned char* data, int len)
 
 	if (common->wcmPktLength == ISDV4_PKGLEN_TPCPEN)
 		channel = isdv4ParsePenPacket(pInfo, data, len, ds);
-	else /* a touch */
+	else { /* a touch */
 		channel = isdv4ParseTouchPacket(pInfo, data, len, ds);
+		ds = &common->wcmChannel[channel].work;
+	}
 
 	if (channel < 0)
 		return 0;

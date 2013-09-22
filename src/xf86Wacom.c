@@ -137,18 +137,40 @@ static void wcmInitialToolSize(InputInfoPtr pInfo)
 	return;
 }
 
-static int
-wcmInitAxes(DeviceIntPtr pWcm)
+static void wcmInitAxis(DeviceIntPtr dev, int axis, Atom label, int min, int max, int res, int min_res, int max_res, int mode) {
+	InitValuatorAxisStruct(dev, axis,
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
+	                       label,
+#endif
+	                       min, max, res, min_res, max_res
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
+	                       ,mode
+#endif
+	);
+}
+
+/**
+ * Initialize the device axes with their proper attributes.
+ *
+ * For each axis on the device, we need to provide X with its attributes
+ * so that its values can be interpreted properly. To support older X
+ * servers without axis labels, each axis index has a de-facto meaning.
+ * Any de-facto defined axis index left unused is initialized with default
+ * attributes.
+ */
+static int wcmInitAxes(DeviceIntPtr pWcm)
 {
 	InputInfoPtr pInfo = (InputInfoPtr)pWcm->public.devicePrivate;
 	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
 	WacomCommonPtr common = priv->common;
 
 	Atom label;
+	int index;
 	int min, max, min_res, max_res, res;
 	int mode;
 
 	/* first valuator: x */
+	index = 0;
 	label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_X);
 	min = priv->topX;
 	max = priv->bottomX;
@@ -157,17 +179,11 @@ wcmInitAxes(DeviceIntPtr pWcm)
 	res = priv->resolX;
 	mode = Absolute;
 
-	InitValuatorAxisStruct(pInfo->dev, 0,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-			       label,
-#endif
-			       min, max, res, min_res, max_res
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
-			       , mode
-#endif
-			       );
+	wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
+
 
 	/* second valuator: y */
+	index = 1;
 	label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_Y);
 	min = priv->topY;
 	max = priv->bottomY;
@@ -176,171 +192,124 @@ wcmInitAxes(DeviceIntPtr pWcm)
 	res = priv->resolY;
 	mode = Absolute;
 
-	InitValuatorAxisStruct(pInfo->dev, 1,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-			       label,
-#endif
-			       min, max, res, min_res, max_res
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
-			       , mode
-#endif
-			       );
+	wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
 
 
 	/* third valuator: pressure */
-
+	index = 2;
+	label = None;
 	mode = Absolute;
 	min_res = max_res = res = 1;
 	min = 0;
+	max = 1;
 
 	if (!IsPad(priv))
 	{
 		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_PRESSURE);
-		/* pressure normalized to FILTER_PRESSURE_RES */
 		max = FILTER_PRESSURE_RES;
-	} else {
-		/* The pad doesn't have a pressure axis, so initialise third
-		 * axis as unknown absolute axis on the pad. This way, we
-		 * can leave the strip/abswheel axes on later axes and don't
-		 * run the danger of clients misinterpreting the axis info
-		 */
-		label = None;
-		max = 1;
 	}
 
+	wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
 
-	InitValuatorAxisStruct(pInfo->dev, 2,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-			       label,
-#endif
-			       min, max, res, min_res, max_res
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
-			       , mode
-#endif
-			       );
 
 	/* fourth valuator: tilt-x, cursor:z-rotation, pad:strip-x */
+	index = 3;
+	label = None;
+	mode = Absolute;
+	min_res = max_res = res = 1;
+	min = 0;
+	max = 1;
 
-	if (IsCursor(priv))
+	if (IsPen(priv))
+	{
+		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_TILT_X),
+		min_res = max_res = res = round(TILT_RES);
+		min = TILT_MIN;
+		max = TILT_MAX;
+	}
+	else if (IsCursor(priv))
 	{
 		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_RZ);
 		min = MIN_ROTATION;
 		max = MIN_ROTATION + MAX_ROTATION_RANGE - 1;
-		min_res = max_res = res = 1;
-		mode = Absolute;
-	} else if (IsPad(priv))
-	{
-		label = None; /* XXX: what is this axis? */
-		min = 0;
-		max = 1; /* dummy value if !HasFeature(WCM_STRIP) */
-		min_res = max_res = res = 1;
-		mode = Absolute;
-		if (TabletHasFeature(common, WCM_STRIP))
-			max = common->wcmMaxStripX;
-	} else
-	{
-			label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_TILT_X),
-			min = -64;
-			max = 63;
-			min_res = max_res = res = 1;
-			mode = Absolute;
+	}
+	else if (IsPad(priv) && TabletHasFeature(common, WCM_STRIP))
+	{ /* XXX: what is this axis label? */
+		max = common->wcmMaxStripX;
 	}
 
-	InitValuatorAxisStruct(pInfo->dev, 3,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-			       label,
-#endif
-			       min, max, res, min_res, max_res
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
-			       , mode
-#endif
-			       );
+	wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
+
 
 	/* fifth valuator: tilt-y, cursor:throttle, pad:strip-y */
+	index = 4;
+	label = None;
+	mode = Absolute;
+	min_res = max_res = res = 1;
+	min = 0;
+	max = 1;
 
-	if (IsCursor(priv))
+	if (IsPen(priv))
+	{
+		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_TILT_Y);
+		min_res = max_res = res = round(TILT_RES);
+		min = TILT_MIN;
+		max = TILT_MAX;
+	}
+	else if (IsCursor(priv))
 	{
 		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_THROTTLE);
 		min = -1023;
 		max = 1023;
-		min_res = max_res = res = 1;
-		mode = Absolute;
-	} else if (IsPad(priv))
-	{
-		label = None; /* XXX: what is this axis? */
-		min = 0;
-		max = 1; /* dummy value if !HasFeature(WCM_STRIP) */
-		min_res = max_res = res = 1;
-		mode = Absolute;
-		if (TabletHasFeature(common, WCM_STRIP))
-			max = common->wcmMaxStripY;
-	} else
-	{
-		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_TILT_Y);
-		min = -64;
-		max = 63;
-		min_res = max_res = res = 1;
-		mode = Absolute;
+	}
+	else if (IsPad(priv) && TabletHasFeature(common, WCM_STRIP))
+	{ /* XXX: what is this axis label? */
+		max = common->wcmMaxStripY;
 	}
 
-	InitValuatorAxisStruct(pInfo->dev, 4,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-			       label,
-#endif
-			       min, max, res, min_res, max_res
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
-			       , mode
-#endif
-			       );
+	wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
+
 
 	/* sixth valuator: airbrush: abs-wheel, artpen: rotation, pad:abs-wheel */
+	index = 5;
+	label = None;
+	mode = Absolute;
+	min_res = max_res = res = 1;
+	min = 0;
+	max = 1;
 
 	if (IsStylus(priv))
 	{
 		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_WHEEL);
 		max = MAX_ROTATION_RANGE + MIN_ROTATION - 1;
 		min = MIN_ROTATION;
-		min_res = max_res = res = 1;
-		mode = Absolute;
-	} else if ((TabletHasFeature(common, WCM_RING)) && IsPad(priv))
+	}
+	else if ((TabletHasFeature(common, WCM_RING)) && IsPad(priv))
 	{
 		/* Touch ring */
 		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_WHEEL);
 		min = MIN_PAD_RING;
 		max = MAX_PAD_RING;
-		min_res = max_res = res = 1;
-		mode = Absolute;
 	}
 
-	InitValuatorAxisStruct(pInfo->dev, 5,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-			       label,
-#endif
-			       min, max, res, min_res, max_res
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
-			       , mode
-#endif
-			       );
+	wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
+
 
 	/* seventh valuator: abswheel2 */
 	if ((TabletHasFeature(common, WCM_DUALRING)) && IsPad(priv))
 	{
-		/* Second touch ring */
+		/* XXX: what is this axis label? */
+		index = 6;
 		label = None;
+		mode = Absolute;
+		min_res = max_res = res = 1;
+		min = 0;
+		max = 1;
+
 		min = MIN_PAD_RING;
 		max = MAX_PAD_RING;
-		min_res = max_res = res = 1;
-		mode = Absolute;
 
-		InitValuatorAxisStruct(pInfo->dev, 6,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-		                       label,
-#endif
-		                       min, max, res, min_res, max_res
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
-		                       , mode
-#endif
-		                       );
+		wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
 	}
 
 	return TRUE;
@@ -355,6 +324,7 @@ static int wcmDevInit(DeviceIntPtr pWcm)
 {
 	InputInfoPtr pInfo = (InputInfoPtr)pWcm->public.devicePrivate;
 	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
+	WacomCommonPtr common =	priv->common;
 	unsigned char butmap[WCM_MAX_BUTTONS+1];
 	int nbaxes, nbbuttons, nbkeys;
 	int loop;
@@ -451,6 +421,19 @@ static int wcmDevInit(DeviceIntPtr pWcm)
 		return FALSE;
 	}
 
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 16
+	if (IsTouch(priv)) {
+		if (!InitTouchClassDeviceStruct(pInfo->dev, common->wcmMaxContacts,
+						TabletHasFeature(common, WCM_LCD) ? XIDirectTouch : XIDependentTouch,
+						2))
+		{
+			xf86Msg(X_ERROR, "Unable to init touch class device struct!\n");
+			return FALSE;
+		}
+		priv->common->touch_mask = valuator_mask_new(2);
+	}
+#endif
+
 	if (!IsPad(priv))
 	{
 		wcmInitialToolSize(pInfo);
@@ -524,7 +507,7 @@ char *wcmEventAutoDevProbe (InputInfoPtr pInfo)
 				xf86ReplaceStrOption(pInfo->options, "Device", fname);
 
 				/* this assumes there is only one Wacom device on the system */
-				return xf86FindOptionValue(pInfo->options, "Device");
+				return xf86CheckStrOption(pInfo->options, "Device", NULL);
 			}
 		}
 		wait += 100;
@@ -534,7 +517,7 @@ char *wcmEventAutoDevProbe (InputInfoPtr pInfo)
 	xf86Msg(X_ERROR, "%s: no Wacom event device found (checked %d nodes, waited %d msec)\n",
 		pInfo->name, i + 1, wait);
 	xf86Msg(X_ERROR, "%s: unable to probe device\n", pInfo->name);
-	return FALSE;
+	return NULL;
 }
 
 /*****************************************************************************
@@ -686,7 +669,8 @@ void wcmReadPacket(InputInfoPtr pInfo)
 		/* for all other errors, hope that the hotplugging code will
 		 * remove the device */
 		if (errno != EAGAIN && errno != EINTR)
-			xf86Msg(X_ERROR, "%s: Error reading wacom device : %s\n", pInfo->name, strerror(errno));
+			LogMessageVerbSigSafe(X_ERROR, 0,
+					      "%s: Error reading wacom device : %s\n", pInfo->name, strerror(errno));
 		return;
 	}
 
@@ -878,7 +862,10 @@ static int wcmDevProc(DeviceIntPtr pWcm, int what)
 			}
 			pWcm->public.on = FALSE;
 			break;
-
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) * 100 + GET_ABI_MINOR(ABI_XINPUT_VERSION) >= 1901
+		case DEVICE_ABORT:
+			break;
+#endif
 		default:
 			xf86Msg(X_ERROR, "%s: invalid mode=%d. This is an X server bug.\n",
 				pInfo->name, what);
