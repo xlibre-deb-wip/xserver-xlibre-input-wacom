@@ -30,7 +30,9 @@ $(objdir)/config.status: configure
 	cd $(objdir) &&	../configure --disable-maintainer-mode		\
 				     --host=$(DEB_HOST_GNU_TYPE)	\
 				     --build=$(DEB_BUILD_GNU_TYPE)	\
-				     --prefix=/usr
+				     --prefix=/usr			\
+				     --with-systemd-unit-dir=/lib/systemd/system \
+				     --with-udev-rules-dir=/lib/udev/rules.d
 
 build: build-arch
 
@@ -55,9 +57,9 @@ install-arch:
 	dh_clean -k
 
 	cd $(objdir) && $(MAKE) install DESTDIR=$(CURDIR)/debian/$(package)
+	mv debian/$(package)/lib/udev/rules.d/wacom.rules \
+	   debian/$(package)/lib/udev/rules.d/69-wacom.rules
 	$(RM) debian/$(package)/usr/lib/xorg/modules/input/*.la
-
-	dh_installudev --priority=69
 
 	echo "xinpdriver:Depends=$(XDEP)" > $(XSUB)
 	echo "xinpdriver:Provides=xorg-driver-input" >> $(XSUB)
@@ -67,7 +69,7 @@ install-indep:
 
 binary: binary-arch
 
-binary-arch:  DH_OPTIONS = -a
+binary-arch: DH_OPTIONS = -a
 binary-arch: install-arch
 	dh_testdir
 	dh_testroot
