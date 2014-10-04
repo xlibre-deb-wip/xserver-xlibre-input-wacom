@@ -282,7 +282,12 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 		case 0x100: /* TPC with MT */
 		case 0x101: /* TPC with MT */
 		case 0x10D: /* TPC with MT */
+		case 0x116: /* TPC with 1FGT */
+		case 0x12C: /* TPC */
 		case 0x4001: /* TPC with MT */
+		case 0x4004: /* TPC with MT (no pen on Motion) */
+		case 0x5000: /* TPC with MT */
+		case 0x5002: /* TPC with MT */
 		case 0xE2: /* TPC with 2FGT */
 		case 0xE3: /* TPC with 2FGT */
 		case 0xE5: /* TPC with MT */
@@ -310,10 +315,11 @@ int wcmDeviceTypeKeys(InputInfoPtr pInfo)
 
 #ifdef INPUT_PROP_DIRECT
 	{
+		int rc;
 		unsigned long prop[NBITS(INPUT_PROP_MAX)] = {0};
 
-		ioctl(pInfo->fd, EVIOCGPROP(sizeof(prop)), prop);
-		if (ISBITSET(prop, INPUT_PROP_DIRECT))
+		rc = ioctl(pInfo->fd, EVIOCGPROP(sizeof(prop)), prop);
+		if (rc >= 0 && ISBITSET(prop, INPUT_PROP_DIRECT))
 			TabletSetFeature(priv->common, WCM_LCD);
 	}
 #endif
@@ -515,7 +521,7 @@ wcmHotplugDevice(ClientPtr client, pointer closure )
  *
  * Note that we don't actually hotplug the device here. We store the
  * information needed to hotplug the device later and then queue the
- * hotplug. The server will come back and call the @wcmHotplugDevice
+ * hotplug. The server will come back and call the @ref wcmHotplugDevice
  * later.
  *
  * @param pInfo The parent device
@@ -715,7 +721,7 @@ int wcmParseSerials (InputInfoPtr pInfo)
 					pInfo->name, serial, name);
 				ser->name = strdup(name);
 			}
-			else ser->name = ""; /*no name yet*/
+			else ser->name = strdup(""); /*no name yet*/
 
 			if (common->serials == NULL)
 				common->serials = ser;
@@ -744,7 +750,7 @@ int wcmParseSerials (InputInfoPtr pInfo)
  * hotplugging, False if the device is a depent or xorg.conf device.
  * @param is_hotplugged True if the device is a dependent device, FALSE
  * otherwise.
- * @retvalue True on success or False otherwise.
+ * @retval True on success or False otherwise.
  */
 Bool wcmPreInitParseOptions(InputInfoPtr pInfo, Bool is_primary,
 			    Bool is_dependent)
@@ -964,6 +970,12 @@ Bool wcmPreInitParseOptions(InputInfoPtr pInfo, Bool is_primary,
 			common->wcmGestureParameters.wcmTapTime);
 	}
 
+	if (IsStylus(priv) || IsEraser(priv)) {
+		common->wcmPressureRecalibration
+			= xf86SetBoolOption(pInfo->options,
+					    "PressureRecalibration", 1);
+	}
+
 	/* Swap stylus buttons 2 and 3 for Tablet PCs */
 	if (TabletHasFeature(common, WCM_TPC) && IsStylus(priv))
 	{
@@ -1005,7 +1017,7 @@ error:
  * hotplugging, False if the device is a depent or xorg.conf device.
  * @param is_hotplugged True if the device is a dependent device, FALSE
  * otherwise.
- * @retvalue True on success or False otherwise.
+ * @retval True on success or False otherwise.
  */
 Bool wcmPostInitParseOptions(InputInfoPtr pInfo, Bool is_primary,
 			     Bool is_dependent)

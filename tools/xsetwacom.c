@@ -17,7 +17,6 @@
  */
 
 #ifdef HAVE_CONFIG_H
-#define WACOM_TOOLS
 #include "config.h"
 #endif
 
@@ -43,6 +42,9 @@
 
 #define TRACE(...) \
 	if (verbose) fprintf(stderr, "... " __VA_ARGS__)
+
+#define safe_realloc(p, n, s) \
+	((size_t)-1 / (n) < (s) ? NULL : realloc((p), (n)*(s)))
 
 static int verbose = False;
 
@@ -202,6 +204,15 @@ static param_t parameters[] =
 		.prop_offset = 0,
 		.arg_count = 1,
 		.prop_flags = PROP_FLAG_BOOLEAN
+	},
+	{
+		.name = "HWTouchSwitchState",
+		.desc = "Touch events turned on/off by hardware switch. ",
+		.prop_name = WACOM_PROP_HARDWARE_TOUCH,
+		.prop_format = 8,
+		.prop_offset = 0,
+		.arg_count = 1,
+		.prop_flags = PROP_FLAG_READONLY | PROP_FLAG_BOOLEAN
 	},
 	{
 		.name = "Gesture",
@@ -433,6 +444,15 @@ static param_t parameters[] =
 		.prop_flags = PROP_FLAG_READONLY
 	},
 	{
+		.name = "PressureRecalibration",
+		.desc = "Turns on/off Tablet pressure recalibration",
+		.prop_name = WACOM_PROP_PRESSURE_RECAL,
+		.prop_format = 8,
+		.prop_offset = 0,
+		.arg_count = 1,
+		.prop_flags = PROP_FLAG_BOOLEAN
+	},
+	{
 		.name = "MapToOutput",
 		.desc = "Map the device to the given output. ",
 		.set_func = set_output,
@@ -445,13 +465,13 @@ static param_t parameters[] =
 		.get_func = get_all,
 		.prop_flags = PROP_FLAG_READONLY,
 	},
-	{ NULL }
+	{}
 };
 
 /**
  * Deprecated parameters and their respective replacements.
  */
-struct deprecated
+static struct deprecated
 {
 	const char *name;
 	const char *replacement;
@@ -637,6 +657,7 @@ static void print_value(param_t *param, const char *msg, ...)
 			vprintf(msg, va_args);
 			printf("\"\n");
 			break;
+		case FORMAT_DEFAULT:
 		default:
 			vprintf(msg, va_args);
 			printf("\n");
@@ -778,7 +799,7 @@ static void list_one_device(Display *dpy, XDeviceInfo *info)
 			if (atoms[j] == wacom_prop)
 				break;
 
-		if (j <= natoms)
+		if (j < natoms)
 		{
 			unsigned char	*data;
 			Atom		type;
@@ -928,7 +949,7 @@ static int special_map_modetoggle(Display *dpy, int argc, char **argv, unsigned 
 static int special_map_displaytoggle(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data, const size_t size);
 
 /* Valid keywords for the --set ButtonX options */
-struct keywords {
+static struct keywords {
 	const char *keyword;
 	int (*func)(Display*, int, char **, unsigned long*, unsigned long *, const size_t size);
 } keywords[] = {
@@ -967,16 +988,17 @@ static int special_map_modetoggle(Display *dpy, int argc, char **argv, unsigned 
 	return 0;
 }
 
+/* the "displaytoggle" keyword isn't supported anymore, we just have this
+   here to tell people that. */
 static int special_map_displaytoggle(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data, const size_t size)
 {
-	if (*ndata + 1 > size) {
-		fprintf(stderr, "Insufficient space to store all commands.\n");
-		return 0;
+	static int once_only = 1;
+	if (once_only)
+	{
+		printf ("Note: The \"displaytoggle\" keyword is not supported "
+			"anymore and will be ignored.\n");
+		once_only = 0;
 	}
-	data[*ndata] = AC_DISPLAYTOGGLE;
-
-	*ndata += 1;
-
 	return 0;
 }
 
@@ -1069,7 +1091,7 @@ static int keysym_to_keycode(Display *dpy, KeySym sym)
 		int i;
 
 		for (i = 0; i < XkbKeyGroupWidth(xkb, kc, state.group); i++)
-			if (XKeycodeToKeysym(dpy, kc, i) == sym)
+			if (XkbKeycodeToKeysym(dpy, kc, state.group, i) == sym)
 				goto out;
 	}
 
@@ -1172,33 +1194,29 @@ static int special_map_keystrokes(Display *dpy, int argc, char **argv, unsigned 
  */
 static char** strjoinsplit(int argc, char **argv, int *nwords)
 {
-	char buff[1024] = { 0 };
-	char **words	= NULL;
-	char *tmp, *tok;
-
-	while(argc--)
-	{
-		if (strlen(buff) + strlen(*argv) + 1 >= sizeof(buff))
-			break;
-
-		strcat(buff, *argv);
-		strcat(buff, " ");
-		argv++;
-	}
+	char **words = NULL;
+	int i, n;
 
 	*nwords = 0;
+	for (i = 0; i < argc; i++) {
+		char *tok = strtok(argv[i], " ");
+		while (tok) {
+			char **p = safe_realloc(words, *nwords+1, sizeof(char*));
+			if (!p) {
+				fprintf(stderr, "Unable to reallocate memory.\n");
+				return words;
+			}
 
-	for (tmp = buff; tmp && *tmp != '\0'; tmp = index((const char*)tmp, ' ') + 1)
-		(*nwords)++;
+			words = p;
+			words[*nwords] = strdup(tok);
+			if (!words[*nwords]) {
+				fprintf(stderr, "Unable to allocate memory.\n");
+				return words;
+			}
 
-	words = calloc(*nwords, sizeof(char*));
-
-	*nwords = 0;
-	tok = strtok(buff, " ");
-	while(tok)
-	{
-		words[(*nwords)++] = strdup(tok);
-		tok = strtok(NULL, " ");
+			(*nwords)++;
+			tok = strtok(NULL, " ");
+		}
 	}
 
 	return words;
@@ -1230,7 +1248,7 @@ static Bool parse_actions(Display *dpy, int argc, char **argv, unsigned long* da
 
 	if (nwords==1 && sscanf(words[0], "%d", &i) == 1)
 	{ /* Mangle "simple" button maps into proper actions */
-		char **new_words = realloc(words, 2);
+		char **new_words = realloc(words, sizeof(char*)*2);
 		if (new_words == NULL)
 		{
 			fprintf(stderr, "Unable to reallocate memory.\n");
@@ -1270,6 +1288,7 @@ static Bool parse_actions(Display *dpy, int argc, char **argv, unsigned long* da
 		if (!keyword_found)
 		{
 			fprintf(stderr, "Cannot parse keyword '%s' at position %d\n", words[i], i+1);
+			free(words);
 			return False;
 		}
 	}
@@ -1306,7 +1325,7 @@ static void special_map_property(Display *dpy, XDevice *dev, Atom btnact_prop, i
 	unsigned long btnact_nitems, bytes_after;
 	unsigned long nitems = 0;
 
-	data = calloc(256, sizeof(long));
+	data = calloc(256, sizeof(unsigned long));
 	if (!parse_actions(dpy, argc, argv, data, &nitems, 256))
 		goto out;
 
@@ -1735,14 +1754,15 @@ static void get_mode(Display *dpy, XDevice *dev, param_t* param, int argc, char 
 	XValuatorInfoPtr v;
 
 	info = XListInputDevices(dpy, &ndevices);
-	while(ndevices--)
+
+	for (i = 0; i < ndevices; i++)
 	{
-		d = &info[ndevices];
+		d = &info[i];
 		if (d->id == dev->device_id)
 			break;
 	}
 
-	if (!ndevices) /* device id 0 is reserved and can't be our device */
+	if (i >= ndevices)
 	{
 		fprintf(stderr, "Unable to locate device.\n");
 		return;
@@ -1886,7 +1906,7 @@ static int get_actions(Display *dpy, XDevice *dev,
 				if (last_type != current_type)
 					strcat(buff, "key ");
 				is_press = !!(action & AC_KEYBTNPRESS);
-				detail = XKeycodeToKeysym(dpy, detail, 0);
+				detail = XkbKeycodeToKeysym(dpy, detail, 0, 0);
 				break;
 			case AC_BUTTON:
 				if (last_type != current_type)
@@ -2075,7 +2095,7 @@ static Bool need_xinerama(Display *dpy)
  * @param y_org[out]   Offset from the desktop origin to the mapped area's top edge
  * @return             True if the function could determine the mapped area
  */
-Bool get_mapped_area(Display *dpy, XDevice *dev, int *width, int *height, int *x_org, int *y_org)
+static Bool get_mapped_area(Display *dpy, XDevice *dev, int *width, int *height, int *x_org, int *y_org)
 {
 	Atom matrix_prop = XInternAtom(dpy, "Coordinate Transformation Matrix", True);
 	Atom type;
@@ -2099,7 +2119,7 @@ Bool get_mapped_area(Display *dpy, XDevice *dev, int *width, int *height, int *x
 	                   AnyPropertyType, &type, &format, &nitems,
 	                   &bytes_after, (unsigned char**)&data);
 
-	if (format != 32 || type != XInternAtom(dpy, "FLOAT", True))
+	if (format != 32 || type != XInternAtom(dpy, "FLOAT", True) || nitems != 9)
 	{
 		fprintf(stderr,"Property for '%s' has unexpected type - this is a bug.\n",
 			"Coordinate Transformation Matrix");
@@ -2247,14 +2267,14 @@ static Bool set_output_area(Display *dpy, XDevice *dev,
  */
 static Bool set_output_xrandr(Display *dpy, XDevice *dev, char *output_name)
 {
-	int i, found = 0;
+	int i, success = 0;
 	int x, y, width, height;
 	XRRScreenResources *res;
 	XRROutputInfo *output_info;
 	XRRCrtcInfo *crtc_info;
 
 	res = XRRGetScreenResources(dpy, DefaultRootWindow(dpy));
-	for (i = 0; i < res->noutput && !found; i++)
+	for (i = 0; i < res->noutput; i++)
 	{
 		output_info = XRRGetOutputInfo(dpy, res, res->outputs[i]);
 
@@ -2275,24 +2295,18 @@ static Bool set_output_xrandr(Display *dpy, XDevice *dev, char *output_name)
 
 		if (strcmp(output_info->name, output_name) == 0)
 		{
-			found = 1;
+			TRACE("Setting CRTC %s\n", output_name);
+			success = set_output_area(dpy, dev, x, y, width, height);
 			break;
 		}
 	}
 	XRRFreeScreenResources(res);
 
-	/* crtc holds our screen info, need to compare to actual screen size */
-	if (found)
-	{
-		TRACE("Setting CRTC %s\n", output_name);
-		return set_output_area(dpy, dev, x, y, width, height);
-	} else
-	{
+	if (!success)
 		printf("Unable to find output '%s'. "
 			"Output may not be connected.\n", output_name);
 
-		return False;
-	}
+	return success;
 }
 
 /**
@@ -2791,7 +2805,7 @@ static void test_parameter_number(void)
 	 * deprecated them.
 	 * Numbers include trailing NULL entry.
 	 */
-	assert(ARRAY_SIZE(parameters) == 37);
+	assert(ARRAY_SIZE(parameters) == 39);
 	assert(ARRAY_SIZE(deprecated_parameters) == 17);
 }
 
