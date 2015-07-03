@@ -33,6 +33,8 @@
 #include <errno.h>
 #include <poll.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <signal.h>
 
 #include "tools-shared.h"
@@ -78,16 +80,17 @@ static int bind_kernel_driver(int fd)
 	return 0;
 }
 
-static int get_baud_rate(int fd)
+static unsigned int get_baud_rate(int fd)
 {
 	struct stat st;
-	int baudrate = 19200;
+	unsigned int baudrate = 19200;
 	int id;
 	struct udev *udev;
 	struct udev_device *device, *parent;
 	const char *attr_id = NULL;
 
-	fstat(fd, &st);
+	if (fstat(fd, &st) == -1)
+		return 0;
 
 	udev = udev_new();
 	device = udev_device_new_from_devnum(udev, 'c', st.st_rdev);
@@ -126,7 +129,7 @@ int main(int argc, char **argv)
         int sensor_id;
 	char *filename;
 	int fd, rc = 1;
-	int baudrate = 0;
+	unsigned int baudrate = 0;
 	int have_baudrate = 0;
 
 	int c, optidx = 0;
@@ -148,8 +151,8 @@ int main(int argc, char **argv)
 				return 0;
 			case 'b':
 				have_baudrate = 1;
-				baudrate = atoi(optarg);
-				if (baudrate <= 0) {
+				baudrate = (unsigned int)atoi(optarg);
+				if (baudrate == 0) {
 					usage();
 					return 1;
 				}
@@ -173,7 +176,7 @@ int main(int argc, char **argv)
 		goto out;
 
 	/* only guess if we didn't get a baud rate */
-	if (!have_baudrate && (baudrate = get_baud_rate(fd)) < 0)
+	if (!have_baudrate && (baudrate = get_baud_rate(fd)) == 0)
 		goto out;
 
 	set_serial_attr(fd, baudrate);
@@ -204,7 +207,7 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, sighandler);
 	signal(SIGHUP, sighandler);
-	read(fd, NULL, 0);
+	rc = (int)read(fd, NULL, 0); /* warning fix only, ignore error */
 
 	set_line_discipline(fd, 0);
 

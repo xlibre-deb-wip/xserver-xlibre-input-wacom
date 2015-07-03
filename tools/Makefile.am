@@ -20,7 +20,8 @@
 
 bin_PROGRAMS = xsetwacom isdv4-serial-debugger isdv4-serial-inputattach
 
-AM_CPPFLAGS = -I$(top_srcdir)/include
+AM_CPPFLAGS = -I$(top_srcdir)/include $(CWARNFLAGS)
+AM_CFLAGS = $(CWARNFLAGS)
 
 shared_sources = tools-shared.h tools-shared.c
 
@@ -33,6 +34,10 @@ isdv4_serial_inputattach_LDADD = $(UDEV_LIBS)
 xsetwacom_SOURCES = xsetwacom.c
 xsetwacom_CFLAGS = $(X11_CFLAGS)
 xsetwacom_LDADD = $(X11_LIBS)
+
+if FUZZINTERFACE
+xsetwacom_CFLAGS += -DBUILD_FUZZINTERFACE
+endif
 
 if UNITTESTS
 check_PROGRAMS = xsetwacom-test

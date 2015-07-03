@@ -111,7 +111,7 @@ int set_serial_attr(int fd, unsigned int baud)
 
 }
 
-int write_to_tablet(int fd, char *command)
+int write_to_tablet(int fd, const char *command)
 {
 	int len = 0;
 
@@ -149,7 +149,7 @@ int stop_tablet(int fd)
 	{
 		while (read(fd, buffer, sizeof(buffer)) > 0)
 			TRACE("garbage flushed\n");
-		fcntl(fd, F_SETFL, fd_flags);
+		(void)fcntl(fd, F_SETFL, fd_flags);
 	}
 
 	return rc;

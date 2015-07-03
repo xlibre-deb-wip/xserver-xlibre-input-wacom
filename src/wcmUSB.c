@@ -401,6 +401,14 @@ static Bool usbWcmInit(InputInfoPtr pInfo, char* id, size_t id_len, float *versi
 
 	DBG(1, priv, "initializing USB tablet\n");
 
+	/* fetch vendor, product, and model name */
+	if (ioctl(pInfo->fd, EVIOCGID, &sID) == -1 ||
+	    ioctl(pInfo->fd, EVIOCGNAME(id_len), id) == -1) {
+		xf86Msg(X_ERROR, "%s: failed to ioctl ID or name.\n",
+					pInfo->name);
+		return !Success;
+	}
+
 	if (!common->private &&
 	    !(common->private = calloc(1, sizeof(wcmUSBData))))
 	{
@@ -411,10 +419,6 @@ static Bool usbWcmInit(InputInfoPtr pInfo, char* id, size_t id_len, float *versi
 
 	usbdata = common->private;
 	*version = 0.0;
-
-	/* fetch vendor, product, and model name */
-	ioctl(pInfo->fd, EVIOCGID, &sID);
-	ioctl(pInfo->fd, EVIOCGNAME(id_len), id);
 
 	for (i = 0; i < ARRAY_SIZE(WacomModelDesc); i++)
 	{
@@ -546,6 +550,11 @@ int usbWcmGetRanges(InputInfoPtr pInfo)
 
 	if (!ISBITSET(ev,EV_ABS))
 	{
+		/* may be an expresskey only interface */
+		if (ISBITSET(common->wcmKeys, BTN_FORWARD) ||
+		    ISBITSET(common->wcmKeys, BTN_0))
+			goto pad_init;
+
 		xf86Msg(X_ERROR, "%s: no abs bits.\n", pInfo->name);
 		return !Success;
 	}
@@ -560,6 +569,11 @@ int usbWcmGetRanges(InputInfoPtr pInfo)
 	/* max x */
 	if (ioctl(pInfo->fd, EVIOCGABS(ABS_X), &absinfo) < 0)
 	{
+		/* may be a PAD only interface */
+		if (ISBITSET(common->wcmKeys, BTN_FORWARD) ||
+		    ISBITSET(common->wcmKeys, BTN_0))
+			goto pad_init;
+
 		xf86Msg(X_ERROR, "%s: unable to ioctl xmax value.\n", pInfo->name);
 		return !Success;
 	}
@@ -755,8 +769,7 @@ int usbWcmGetRanges(InputInfoPtr pInfo)
 
 	if (ioctl(pInfo->fd, EVIOCGBIT(EV_SW, sizeof(sw)), sw) < 0)
 	{
-		xf86Msg(X_ERROR, "%s: usbProbeKeys unable to ioctl "
-			"sw bits.\n", pInfo->name);
+		xf86Msg(X_ERROR, "%s: unable to ioctl sw bits.\n", pInfo->name);
 		return 0;
 	}
 	else if (ISBITSET(sw, SW_MUTE_DEVICE))
@@ -765,7 +778,8 @@ int usbWcmGetRanges(InputInfoPtr pInfo)
 
 		memset(sw, 0, sizeof(sw));
 
-		ioctl(pInfo->fd, EVIOCGSW(sizeof(sw)), sw);
+		if (ioctl(pInfo->fd, EVIOCGSW(sizeof(sw)), sw) < 0)
+			xf86Msg(X_ERROR, "%s: unable to ioctl sw state.\n", pInfo->name);
 
 		if (ISBITSET(sw, SW_MUTE_DEVICE))
 			common->wcmHWTouchSwitchState = 0;
@@ -773,6 +787,7 @@ int usbWcmGetRanges(InputInfoPtr pInfo)
 			common->wcmHWTouchSwitchState = 1;
 	}
 
+pad_init:
 	usbWcmInitPadState(pInfo);
 
 	return Success;
@@ -800,11 +815,13 @@ static int usbParse(InputInfoPtr pInfo, const unsigned char* data, int len)
 {
 	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
 	WacomCommonPtr common = priv->common;
+	struct input_event event;
 
 	if (len < sizeof(struct input_event))
 		return 0;
 
-	usbParseEvent(pInfo, (const struct input_event*)data);
+	memcpy(&event, data, sizeof(event));
+	usbParseEvent(pInfo, &event);
 	return common->wcmPktLength;
 }
 
@@ -1250,6 +1267,8 @@ static void usbParseAbsMTEvent(WacomCommonPtr common, struct input_event *event)
 			if (event->value >= 0) {
 				int serial = event->value + 1;
 				private->wcmMTChannel = usbChooseChannel(common, TOUCH_ID, serial);
+				if (private->wcmMTChannel < 0)
+					return;
 				ds = &common->wcmChannel[private->wcmMTChannel].work;
 				ds->serial_num = serial;
 			}
