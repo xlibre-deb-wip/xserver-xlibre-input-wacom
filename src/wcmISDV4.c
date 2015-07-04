@@ -29,6 +29,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <libudev.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #define RESET_RELATIVE(ds) do { (ds).relwheel = 0; } while (0)
 
@@ -588,7 +590,7 @@ static int isdv4StopTablet(InputInfoPtr pInfo)
 		char buffer[10];
 		while (read(pInfo->fd, buffer, sizeof(buffer)) > 0)
 			DBG(10, common, "discarding garbage data.\n");
-		fcntl(pInfo->fd, F_SETFL, fd_flags);
+		(void)fcntl(pInfo->fd, F_SETFL, fd_flags);
 	}
 
 	return Success;
@@ -818,7 +820,8 @@ static int isdv4Parse(InputInfoPtr pInfo, const unsigned char* data, int len)
 		channel = isdv4ParsePenPacket(pInfo, data, len, ds);
 	else { /* a touch */
 		channel = isdv4ParseTouchPacket(pInfo, data, len, ds);
-		ds = &common->wcmChannel[channel].work;
+		if (channel >= 0)
+			ds = &common->wcmChannel[channel].work;
 	}
 
 	if (channel < 0)
@@ -981,8 +984,10 @@ static Bool get_sysfs_id(InputInfoPtr pInfo, char *buf, int buf_size)
 	char *sysfs_path = NULL;
 	FILE *file = NULL;
 	Bool ret = FALSE;
+	int bytes_read;
 
-	fstat(pInfo->fd, &st);
+	if (fstat(pInfo->fd, &st) == -1)
+		goto out;
 
 	udev = udev_new();
 	device = udev_device_new_from_devnum(udev, 'c', st.st_rdev);
@@ -998,8 +1003,10 @@ static Bool get_sysfs_id(InputInfoPtr pInfo, char *buf, int buf_size)
 	file = fopen(sysfs_path, "r");
 	if (!file)
 		goto out;
-	if (!fread(buf, 1, buf_size, file))
+	bytes_read = fread(buf, 1, buf_size - 1, file);
+	if (bytes_read == 0)
 		goto out;
+	buf[bytes_read] = '\0';
 	ret = TRUE;
 out:
 	udev_device_unref(device);

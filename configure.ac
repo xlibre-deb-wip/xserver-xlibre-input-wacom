@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-wacom],
-        [0.26.0],
+        [0.30.0],
         [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg],
         [xf86-input-wacom])
 AC_CONFIG_MACRO_DIR([m4])
@@ -105,6 +105,12 @@ AC_ARG_WITH([xorg-conf-dir],
             [configdir="$sysconfigdir"])
 AC_SUBST(configdir)
 AM_CONDITIONAL(HAS_XORG_CONF_DIR, [test "x$configdir" != "x"])
+
+AC_ARG_ENABLE(fuzz-interface, AS_HELP_STRING([--enable-fuzz-interface],
+                          [Enable xsetwacom to take NUL-separated commands from stdin (default: no)]),
+                          [FUZZINTERFACE=$enableval],
+                          [FUZZINTERFACE=no])
+AM_CONDITIONAL(FUZZINTERFACE, [test "x$FUZZINTERFACE" = xyes])
 
 AC_ARG_ENABLE(unit-tests, AS_HELP_STRING([--enable-unit-tests],
                           [Enable unit-tests (default: auto)]),

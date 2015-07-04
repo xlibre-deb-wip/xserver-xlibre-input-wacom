@@ -98,7 +98,7 @@ void set_absolute(InputInfoPtr pInfo, Bool absolute)
 static void wcmSendButtons(InputInfoPtr pInfo, int buttons,
 			   int first_val, int num_vals, int *valuators)
 {
-	int button, mask, first_button;
+	unsigned int button, mask, first_button;
 	WacomDevicePtr priv = (WacomDevicePtr) pInfo->private;
 	WacomCommonPtr common = priv->common;
 	DBG(6, priv, "buttons=%d\n", buttons);
@@ -134,7 +134,7 @@ static void wcmSendButtons(InputInfoPtr pInfo, int buttons,
 
 	for (button = first_button; button < WCM_MAX_BUTTONS; button++)
 	{
-		mask = 1 << button;
+		mask = 1u << button;
 		if ((mask & priv->oldState.buttons) != (mask & buttons))
 			sendAButton(pInfo, button, (mask & buttons),
 					first_val, num_vals, valuators);
@@ -706,7 +706,8 @@ void wcmSendEvents(InputInfoPtr pInfo, const WacomDeviceState* ds)
 	valuators[3] = v3;
 	valuators[4] = v4;
 	valuators[5] = v5;
-	valuators[6] = v6;
+	if (priv->naxes > 6)
+		valuators[6] = v6;
 
 	if (type == PAD_ID)
 		wcmSendPadEvents(pInfo, ds, 3, priv->naxes - 3, &valuators[3]); /* pad doesn't post x/y/z */
@@ -1266,7 +1267,7 @@ static void commonDispatchDevice(InputInfoPtr pInfo,
 		double delty = filtered.y - priv->oldState.y;
 
 		/* less than one device coordinate movement? */
-		if (abs(deltx)<1 && abs(delty)<1)
+		if (fabs(deltx)<1 && fabs(delty)<1)
 		{
 			/* We have no other data in this event, skip */
 			if (suppress == SUPPRESS_NON_MOTION)
@@ -1474,6 +1475,9 @@ WacomCommonPtr wcmNewCommon(void)
 void wcmFreeCommon(WacomCommonPtr *ptr)
 {
 	WacomCommonPtr common = *ptr;
+
+	if (!common)
+		return;
 
 	DBG(10, common, "common refcount dec to %d\n", common->refcnt - 1);
 	if (--common->refcnt == 0)
