@@ -1,3 +1,12 @@
+xf86-input-wacom (0.30.0-1) unstable; urgency=medium
+
+  * Fixes FTBFS in Stretch due to missing headers needed for fstat(2).
+    This was already caught and fixed in upstream commits
+    8317dc44c142a2d38e85e6d2955236d7dd900450 and
+    5ce9a72fb8249af500e88bde3e6ec0239cd0b8ac.  Closes: #790631
+
+ -- Ron Lee <ron@debian.org>  Sat, 04 Jul 2015 09:30:47 +0930
+
 xf86-input-wacom (0.26.0+20140918-1) unstable; urgency=medium
 
   * I dedicate this snapshot to Odin^Wclang.
