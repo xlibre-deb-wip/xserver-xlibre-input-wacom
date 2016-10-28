@@ -1,3 +1,19 @@
+xf86-input-wacom (0.33.0-1) unstable; urgency=medium
+
+  * Fix regression in simple button mapping. Closes: #840635
+  * Prevent xf86-input-wacom from binding to pure-keyboard devices.
+    Along with other updates to the xorg conf, possibly Closes: #804743
+  * Fix conflict with libinput over which driver to use by changing the xorg
+    conf priority to 70.  Along with a similar change to the priority that
+    libinput registers itself with, this Closes: #825391
+  * Move xorg-wacom.pc to a multiarch dir so that it can be used when cross
+    compiling too.  Many thanks to Helmut Grohne for the work he's done on
+    making that possible for more distro packages and for doing the legwork
+    to catch this and figure out what was needed here.  Closes: #837949
+  * Includes some fixes for touch handling, possibly Closes: #803390, #793159
+
+ -- Ron Lee <ron@debian.org>  Fri, 28 Oct 2016 16:07:55 +1030
+
 xf86-input-wacom (0.30.0-1) unstable; urgency=medium
 
   * Fixes FTBFS in Stretch due to missing headers needed for fstat(2).
