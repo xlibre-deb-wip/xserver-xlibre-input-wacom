@@ -112,7 +112,7 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
-am__dist_config_DATA_DIST = 50-wacom.conf
+am__dist_config_DATA_DIST = 70-wacom.conf
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
     $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
@@ -299,7 +299,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 CLEANFILES = $(am__append_1)
-@HAS_XORG_CONF_DIR_TRUE@dist_config_DATA = 50-wacom.conf
+@HAS_XORG_CONF_DIR_TRUE@dist_config_DATA = 70-wacom.conf
 @HAS_XORG_CONF_DIR_FALSE@fdidir = $(datadir)/hal/fdi/policy/20thirdparty
 @HAS_XORG_CONF_DIR_FALSE@dist_fdi_DATA = wacom.fdi
 @HAVE_SYSTEMD_UNIT_DIR_TRUE@unitdir = $(SYSTEMD_UNIT_DIR)
