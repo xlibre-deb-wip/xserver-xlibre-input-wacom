@@ -104,6 +104,26 @@ static Atom prop_debuglevels;
 #endif
 
 /**
+ * Calculate a user-visible pressure level from a driver-internal pressure
+ * level. Pressure settings exposed to the user assume a range of 0-2047
+ * while the driver scales everything to a range of 0-FILTER_PRESSURE_RES.
+ */
+static inline int wcmInternalToUserPressure(int pressure)
+{
+	return pressure / (FILTER_PRESSURE_RES / 2048);
+}
+
+/**
+ * Calculate a driver-internal pressure level from a user-visible pressure
+ * level. Pressure settings exposed to the user assume a range of 0-2047
+ * while the driver scales everything to a range of 0-FILTER_PRESSURE_RES.
+ */
+static inline int wcmUserToInternalPressure(int pressure)
+{
+	return pressure * (FILTER_PRESSURE_RES / 2048);
+}
+
+/**
  * Resets an arbitrary Action property, given a pointer to the old
  * handler and information about the new Action.
  */
@@ -256,6 +276,7 @@ void InitWcmDeviceProperties(InputInfoPtr pInfo)
 	}
 
 	values[0] = (!common->wcmMaxZ) ? 0 : common->wcmThreshold;
+	values[0] = wcmInternalToUserPressure(values[0]);
 	prop_threshold = InitWcmAtom(pInfo->dev, WACOM_PROP_PRESSURE_THRESHOLD, XA_INTEGER, 32, 1, values);
 
 	values[0] = common->wcmSuppress;
@@ -612,36 +633,43 @@ void wcmUpdateRotationProperty(WacomDevicePtr priv)
 	}
 }
 
-static CARD32
-touchTimerFunc(OsTimerPtr timer, CARD32 now, pointer arg)
+static void
+wcmSetHWTouchProperty(InputInfoPtr pInfo)
 {
-	InputInfoPtr pInfo = arg;
 	WacomDevicePtr priv = pInfo->private;
 	WacomCommonPtr common = priv->common;
 	XIPropertyValuePtr prop;
 	CARD8 prop_value;
-	int sigstate;
 	int rc;
-
-	sigstate = xf86BlockSIGIO();
 
 	rc = XIGetDeviceProperty(pInfo->dev, prop_hardware_touch, &prop);
 	if (rc != Success || prop->format != 8 || prop->size != 1)
 	{
 		xf86Msg(X_ERROR, "%s: Failed to update hardware touch state.\n",
 			pInfo->name);
-		return 0;
+		return;
 	}
 
 	prop_value = common->wcmHWTouchSwitchState;
 	XIChangeDeviceProperty(pInfo->dev, prop_hardware_touch, XA_INTEGER,
 			       prop->format, PropModeReplace,
 			       prop->size, &prop_value, TRUE);
+}
+
+#if !HAVE_THREADED_INPUT
+static CARD32
+touchTimerFunc(OsTimerPtr timer, CARD32 now, pointer arg)
+{
+	InputInfoPtr pInfo = arg;
+	int sigstate = xf86BlockSIGIO();
+
+	wcmSetHWTouchProperty(pInfo);
 
 	xf86UnblockSIGIO(sigstate);
 
 	return 0;
 }
+#endif
 
 /**
  * Update HW touch property when its state is changed by touch switch
@@ -656,10 +684,14 @@ wcmUpdateHWTouchProperty(WacomDevicePtr priv, int hw_touch)
 
 	common->wcmHWTouchSwitchState = hw_touch;
 
+#if HAVE_THREADED_INPUT
+	wcmSetHWTouchProperty(priv->pInfo);
+#else
 	/* This function is called during SIGIO. Schedule timer for property
 	 * event delivery outside of signal handler. */
 	priv->touch_timer = TimerSet(priv->touch_timer, 0 /* reltime */,
 				      1, touchTimerFunc, priv->pInfo);
+#endif
 }
 
 /**
@@ -816,6 +848,7 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 			common->wcmCursorProxoutDist = value;
 	} else if (property == prop_threshold)
 	{
+		const INT32 MAXIMUM = wcmInternalToUserPressure(FILTER_PRESSURE_RES);
 		INT32 value;
 
 		if (prop->size != 1 || prop->format != 32)
@@ -825,8 +858,10 @@ int wcmSetProperty(DeviceIntPtr dev, Atom property, XIPropertyValuePtr prop,
 
 		if (value == -1)
 			value = DEFAULT_THRESHOLD;
-		else if ((value < 1) || (value > FILTER_PRESSURE_RES))
+		else if ((value < 1) || (value > MAXIMUM))
 			return BadValue;
+		else
+			value = wcmUserToInternalPressure(value);
 
 		if (!checkonly)
 			common->wcmThreshold = value;
@@ -1014,24 +1049,20 @@ int wcmGetProperty (DeviceIntPtr dev, Atom property)
 	return Success;
 }
 
-static CARD32
-serialTimerFunc(OsTimerPtr timer, CARD32 now, pointer arg)
+static void
+wcmSetSerialProperty(InputInfoPtr pInfo)
 {
-	InputInfoPtr pInfo = arg;
 	WacomDevicePtr priv = pInfo->private;
 	XIPropertyValuePtr prop;
 	CARD32 prop_value[5];
-	int sigstate;
 	int rc;
-
-	sigstate = xf86BlockSIGIO();
 
 	rc = XIGetDeviceProperty(pInfo->dev, prop_serials, &prop);
 	if (rc != Success || prop->format != 32 || prop->size != 5)
 	{
 		xf86Msg(X_ERROR, "%s: Failed to update serial number.\n",
 			pInfo->name);
-		return 0;
+		return;
 	}
 
 	memcpy(prop_value, prop->data, sizeof(prop_value));
@@ -1041,11 +1072,22 @@ serialTimerFunc(OsTimerPtr timer, CARD32 now, pointer arg)
 	XIChangeDeviceProperty(pInfo->dev, prop_serials, XA_INTEGER,
 			       prop->format, PropModeReplace,
 			       prop->size, prop_value, TRUE);
+}
+
+#if !HAVE_THREADED_INPUT
+static CARD32
+serialTimerFunc(OsTimerPtr timer, CARD32 now, pointer arg)
+{
+	InputInfoPtr pInfo = arg;
+	int sigstate = xf86BlockSIGIO();
+
+	wcmSetSerialProperty(pInfo);
 
 	xf86UnblockSIGIO(sigstate);
 
 	return 0;
 }
+#endif
 
 void
 wcmUpdateSerial(InputInfoPtr pInfo, unsigned int serial, int id)
@@ -1058,10 +1100,14 @@ wcmUpdateSerial(InputInfoPtr pInfo, unsigned int serial, int id)
 	priv->cur_serial = serial;
 	priv->cur_device_id = id;
 
+#if HAVE_THREADED_INPUT
+	wcmSetSerialProperty(pInfo);
+#else
 	/* This function is called during SIGIO. Schedule timer for property
 	 * event delivery outside of signal handler. */
 	priv->serial_timer = TimerSet(priv->serial_timer, 0 /* reltime */,
 				      1, serialTimerFunc, pInfo);
+#endif
 }
 
 static void

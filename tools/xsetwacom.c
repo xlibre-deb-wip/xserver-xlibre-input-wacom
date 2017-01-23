@@ -605,6 +605,8 @@ static struct modifier specialkeys[] = {
 
 	{"backspace", "BackSpace"}, {"Backspace", "BackSpace"},
 
+	{"return", "Return"},
+
 	{"tab", "Tab"},
 
 	{"PgUp", "Prior"}, {"PgDn", "Next"},
@@ -937,6 +939,9 @@ static void list_mod(Display *dpy)
 	m = specialkeys;
 	while(m->name)
 		printf("	%s\n", m++->name);
+
+	printf("Keys not listed above can be specified via their KeySyms."
+		" See the man page for details.\n");
 }
 
 static void list(Display *dpy, int argc, char **argv)

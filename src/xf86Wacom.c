@@ -282,8 +282,8 @@ static int wcmInitAxes(DeviceIntPtr pWcm)
 	{
 		/* Touch ring */
 		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_WHEEL);
-		min = MIN_PAD_RING;
-		max = MAX_PAD_RING;
+		min = common->wcmMinRing;
+		max = common->wcmMaxRing;
 	}
 
 	wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
@@ -298,8 +298,8 @@ static int wcmInitAxes(DeviceIntPtr pWcm)
 		mode = Absolute;
 		min_res = max_res = res = 1;
 
-		min = MIN_PAD_RING;
-		max = MAX_PAD_RING;
+		min = common->wcmMinRing;
+		max = common->wcmMaxRing;
 
 		wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
 	}
@@ -854,7 +854,6 @@ static int wcmDevProc(DeviceIntPtr pWcm, int what)
 			break;
 
 		case DEVICE_OFF:
-		case DEVICE_CLOSE:
 			wcmDisableTool(pWcm);
 			wcmUnlinkTouchAndPen(pInfo);
 			if (pInfo->fd >= 0)
@@ -863,6 +862,8 @@ static int wcmDevProc(DeviceIntPtr pWcm, int what)
 				wcmDevClose(pInfo);
 			}
 			pWcm->public.on = FALSE;
+			break;
+		case DEVICE_CLOSE:
 			break;
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) * 100 + GET_ABI_MINOR(ABI_XINPUT_VERSION) >= 1901
 		case DEVICE_ABORT:
