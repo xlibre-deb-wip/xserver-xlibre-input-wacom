@@ -200,7 +200,7 @@ static int wcmInitAxes(DeviceIntPtr pWcm)
 	if (!IsPad(priv))
 	{
 		label = XIGetKnownProperty(AXIS_LABEL_PROP_ABS_PRESSURE);
-		max = FILTER_PRESSURE_RES;
+		max = priv->maxCurve;
 	}
 
 	wcmInitAxis(pInfo->dev, index, label, min, max, res, min_res, max_res, mode);
@@ -823,9 +823,7 @@ static void wcmUnlinkTouchAndPen(InputInfoPtr pInfo)
 static int wcmDevProc(DeviceIntPtr pWcm, int what)
 {
 	InputInfoPtr pInfo = (InputInfoPtr)pWcm->public.devicePrivate;
-#ifdef DEBUG
 	WacomDevicePtr priv = (WacomDevicePtr)pInfo->private;
-#endif
 	Status rc = !Success;
 
 	DBG(2, priv, "BEGIN dev=%p priv=%p "
@@ -854,6 +852,9 @@ static int wcmDevProc(DeviceIntPtr pWcm, int what)
 			break;
 
 		case DEVICE_OFF:
+			TimerCancel(priv->tap_timer);
+			TimerCancel(priv->serial_timer);
+			TimerCancel(priv->touch_timer);
 			wcmDisableTool(pWcm);
 			wcmUnlinkTouchAndPen(pInfo);
 			if (pInfo->fd >= 0)
