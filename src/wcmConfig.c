@@ -63,6 +63,7 @@ static int wcmAllocate(InputInfoPtr pInfo)
 	priv->pInfo = pInfo;
 	priv->common = common;       /* common info pointer */
 	priv->oldCursorHwProx = 0;   /* previous cursor hardware proximity */
+	priv->maxCurve = FILTER_PRESSURE_RES;
 	priv->nPressCtrl [0] = 0;    /* pressure curve x0 */
 	priv->nPressCtrl [1] = 0;    /* pressure curve y0 */
 	priv->nPressCtrl [2] = 100;  /* pressure curve x1 */
@@ -320,10 +321,19 @@ static void wcmSplitName(char* devicename, char *basename, char *subdevice, char
 	{
 		*a = '\0';
 		b = strrchr(name, ' ');
-		if (b && (!strcmp(b, " Pen") || !strcmp(b, " Finger") || !strcmp(b, " Pad")))
+
+		while (b)
 		{
-			*b = '\0';
-			strncat(subdevice, b+1, len-1);
+			if (!strcmp(b, " Pen") || !strcmp(b, " Finger") ||
+			    !strcmp(b, " Pad") || !strcmp(b, " Touch"))
+			{
+				*b = '\0';
+				strncpy(subdevice, b+1, len-1);
+				subdevice[len-1] = '\0';
+				b = strrchr(name, ' ');
+			}
+			else
+				b = NULL;
 		}
 		strncat(tool, a+1, len-1);
 	}
