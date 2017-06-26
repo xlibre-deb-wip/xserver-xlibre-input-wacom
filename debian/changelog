@@ -1,3 +1,44 @@
+xf86-input-wacom (0.34.99.1-1) unstable; urgency=medium
+
+  * Make sibling device name matching slightly more lenient.
+    This improves support of subdevices for MobileStudio Pro and Cintiq Pro.
+
+  * Revert to Update properties with a timer func.
+    With the new input thread it was possible to send events from that thread
+    directly, but doing that had some other undesirable consequences, like
+    triggering a bug in the server which could make it crash.  Later versions
+    of the server caught that, and instead caused this to spew warnings to the
+    xorg logs.   Closes: #856140, #862639
+
+  * xsetwacom: use XkbGetMap instead of XkbGetKeyboard.
+    This is more robust in cases where certain keyboard description components
+    are missing.
+
+  * Introduce "Pressure2K" config option for incompatible software.
+    The 0.34.0 release included commit 3e56ce44 which increased the range of
+    pressure values that are reported to better support newer devices which
+    have greater precision than the historical range allowed for.
+
+    Unfortunately, there appear to be some buggy applications which don't take
+    into account the advertised range (though GTK 2/3 and Qt 3-5 should), and
+    may misbehave with the new range.  Until they too are fixed, this release
+    includes a workaround that users can enable, forcing the use of the old
+    pressure range.
+
+    To enable that, you'll want to add something like the following snippet to
+    a file in the /etc/X11/xorg.conf.d directory (see xorg.conf(5) and wacom(4)
+    for more details of doing that).
+
+     Section "InputClass"
+        Identifier "Wacom pressure compatibility"
+        MatchDriver "wacom"
+        Option "Pressure2K" "true"
+     EndSection
+
+    Closes: #862671
+
+ -- Ron Lee <ron@debian.org>  Mon, 26 Jun 2017 16:33:04 +0930
+
 xf86-input-wacom (0.34.0-1) unstable; urgency=medium
 
   * Handle the input ABI 23 - removal of xf86BlockSIGIO.
