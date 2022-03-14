@@ -1,3 +1,16 @@
+xf86-input-wacom (0.34.99.1-2) unstable; urgency=medium
+
+  * Take over package maintenance via ITS process. (Closes: #1005844)
+  * debian/control:
+    + Apply "wrap-and-sort -abst".
+    + Update Vcs-* fields. (Closes: #909230)
+    + Update homepage field. (Closes: #964107)
+    + Bump Standards-Version to 4.6.0.
+  * debian/compat: Bump to v7. (Closes: #965897)
+  * debian/source/format: Bump to 3.0 (quilt). (Closes: #1007073)
+
+ -- Boyuan Yang <byang@debian.org>  Mon, 14 Mar 2022 07:26:46 -0400
+
 xf86-input-wacom (0.34.99.1-1) unstable; urgency=medium
 
   * Make sibling device name matching slightly more lenient.
