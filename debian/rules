@@ -12,8 +12,14 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 # package maintainers to append LDFLAGS
 export DEB_LDFLAGS_MAINT_APPEND =
 
+include /usr/share/dpkg/default.mk
+
 SYSTEMD_SYSTEM_DIR = /lib/systemd/system
 UDEV_RULES_D_DIR = /lib/udev/rules.d
+
+package = xserver-xorg-input-wacom
+XDEP = $(shell cat /usr/share/xserver-xorg/xinputdep)
+XSUB = debian/$(package).substvars
 
 %:
 	dh $@
@@ -27,3 +33,6 @@ override_dh_auto_configure:
 execute_after_dh_auto_install:
 	# Rename wacom udev rules with serial number
 	mv debian/xserver-xorg-input-wacom/$(UDEV_RULES_D_DIR)/wacom.rules debian/xserver-xorg-input-wacom/$(UDEV_RULES_D_DIR)/69-wacom.rules
+	# Handle xinpdriver:*
+	echo "xinpdriver:Depends=$(XDEP)" > $(XSUB)
+	echo "xinpdriver:Provides=xorg-driver-input" >> $(XSUB)

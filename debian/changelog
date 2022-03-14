@@ -1,6 +1,6 @@
 xf86-input-wacom (1.0.0-1) unstable; urgency=medium
 
-  * New upstream release.
+  * New upstream release. (Closes: #964106)
   * Switch to new upstream (GitHub).
   * debian/watch: Monitor new upstream.
   * debian/gbp.conf: Added for DEP-14 repo format.
@@ -8,7 +8,7 @@ xf86-input-wacom (1.0.0-1) unstable; urgency=medium
   * debian/upstream/metadata: Added.
   * debian/rules: Rewrite with dh sequencer.
 
- -- Boyuan Yang <byang@debian.org>  Mon, 14 Mar 2022 07:53:31 -0400
+ -- Boyuan Yang <byang@debian.org>  Mon, 14 Mar 2022 07:59:45 -0400
 
 xf86-input-wacom (0.34.99.1-2) unstable; urgency=medium
 
