@@ -16,9 +16,9 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif
+
+#include "config-ver.h" /* BUILD_VERSION */
 
 #include <wacom-properties.h>
 #include <wacom-util.h>
@@ -28,6 +28,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <getopt.h>
@@ -472,6 +473,15 @@ static param_t parameters[] =
 		.prop_flags = PROP_FLAG_BOOLEAN
 	},
 	{
+		.name = "PanScrollThreshold",
+		.x11name = "PanScrollThreshold",
+		.desc = "Adjusts distance required for pan actions to generate a scroll event",
+		.prop_name = WACOM_PROP_PANSCROLL_THRESHOLD,
+		.prop_format = 32,
+		.prop_offset = 0,
+		.arg_count = 1,
+	},
+	{
 		.name = "MapToOutput",
 		.desc = "Map the device to the given output. ",
 		.set_func = set_output,
@@ -484,7 +494,7 @@ static param_t parameters[] =
 		.get_func = get_all,
 		.prop_flags = PROP_FLAG_READONLY,
 	},
-	{}
+	{.name = NULL}
 };
 
 /**
@@ -504,7 +514,7 @@ static struct deprecated
 	{"GetTabletID", "TabletID"},
 	{"DebugLevel",	"ToolDebugLevel"},
 	{"CommonDBG",	"TabletDebugLevel"},
-	{"GetTabletID",	"TabletID"},
+	{"Serial",	"BindToSerial"},
 	{"PressCurve",	"PressureCurve"},
 	{"TPCButton",	"TabletPCButton"},
 	{"CursorProx",	"CursorProximity"},
@@ -580,6 +590,8 @@ static struct modifier modifiers[] = {
 	{"hyper", "Hyper_L"},
 	{"lhyper", "Hyper_L"},
 	{"rhyper", "Hyper_R"},
+
+	{"altgr", "ISO_Level3_Shift"},
 
 	{ NULL, NULL }
 };
@@ -751,8 +763,7 @@ static void usage(void)
 
 static void version(void)
 {
-	printf("%d.%d.%d\n", PACKAGE_VERSION_MAJOR, PACKAGE_VERSION_MINOR,
-			     PACKAGE_VERSION_PATCHLEVEL);
+	printf(BUILD_VERSION "\n");
 }
 
 static XDevice* find_device(Display *display, char *name)
@@ -983,7 +994,7 @@ static const char *convert_specialkey(const char *specialkey)
 			m++;
 	}
 
-	return m->converted ? m->converted : (char*)specialkey;
+	return m->converted ? m->converted : specialkey;
 }
 
 /**
@@ -1010,6 +1021,7 @@ static int special_map_button(Display *dpy, int argc, char **argv, unsigned long
 static int special_map_core(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data, const size_t size);
 static int special_map_modetoggle(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data, const size_t size);
 static int special_map_displaytoggle(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data, const size_t size);
+static int special_map_panscroll(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data, const size_t size);
 
 /* Valid keywords for the --set ButtonX options */
 static struct keywords {
@@ -1021,6 +1033,7 @@ static struct keywords {
 	{"core", special_map_core},
 	{"modetoggle", special_map_modetoggle},
 	{"displaytoggle", special_map_displaytoggle},
+	{"pan", special_map_panscroll},
 	{ NULL, NULL }
 };
 
@@ -1062,6 +1075,19 @@ static int special_map_displaytoggle(Display *dpy, int argc, char **argv, unsign
 			"anymore and will be ignored.\n");
 		once_only = 0;
 	}
+	return 0;
+}
+
+static int special_map_panscroll(Display *dpy, int argc, char **argv, unsigned long *ndata, unsigned long *data, const size_t size)
+{
+	if (*ndata + 1 > size) {
+		fprintf(stderr, "Insufficient space to store all commands.\n");
+		return 0;
+	}
+	data[*ndata] = AC_PANSCROLL;
+
+	*ndata += 1;
+
 	return 0;
 }
 
@@ -1341,14 +1367,14 @@ static Bool parse_actions(Display *dpy, int argc, char **argv, unsigned long* da
 	int  nwords = 0;
 	char **words = NULL;
 	int n;
-	
+
 	/* translate cmdline commands */
 	words = strjoinsplit(argc, argv, &nwords);
 
 	if (nwords==1 && sscanf(words[0], "%d", &n) == 1)
 	{ /* Mangle "simple" button maps into proper actions */
 		char *nargv[1];
-		
+
 		for (i =  0; i < nwords; i++)
 			free(words[i]);
 		free(words);
@@ -2204,7 +2230,7 @@ static Bool get_mapped_area(Display *dpy, XDevice *dev, int *width, int *height,
 {
 	Atom matrix_prop = XInternAtom(dpy, "Coordinate Transformation Matrix", True);
 	Atom type;
-	int format, i;
+	int format;
 	unsigned long nitems, bytes_after;
 	unsigned long *data;
 	float matrix[9];
@@ -2234,7 +2260,7 @@ static Bool get_mapped_area(Display *dpy, XDevice *dev, int *width, int *height,
 
 	/* XI1 stores 32 bit properties (including float) as long,
 	 * regardless of architecture */
-	for (i = 0; i < ARRAY_SIZE(matrix); i++)
+	for (size_t i = 0; i < ARRAY_SIZE(matrix); i++)
 		matrix[i] = *(float*)(&data[i]);
 
 	TRACE("Current transformation matrix:\n");
@@ -2275,7 +2301,6 @@ static Bool _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
 	unsigned long nitems, bytes_after;
 	float *data;
 	long matrix[9] = {0};
-	int i;
 
 	if (!matrix_prop)
 	{
@@ -2285,7 +2310,7 @@ static Bool _set_matrix_prop(Display *dpy, XDevice *dev, const float fmatrix[9])
 
 	/* XI1 expects 32 bit properties (including float) as long,
 	 * regardless of architecture */
-	for (i = 0; i < ARRAY_SIZE(matrix); i++)
+	for (size_t i = 0; i < ARRAY_SIZE(matrix); i++)
 		*(float*)(matrix + i) = fmatrix[i];
 
 	XGetDeviceProperty(dpy, dev, matrix_prop, 0, 9, False,
@@ -2726,7 +2751,7 @@ out:
 }
 
 
-#ifndef BUILD_TEST
+#ifndef ENABLE_TESTS
 
 #ifdef BUILD_FUZZINTERFACE
 void argsfromstdin(int *argc, char ***argv)
@@ -2769,6 +2794,24 @@ void argsfromstdin(int *argc, char ***argv)
 	}
 }
 #endif /* BUILD_FUZZINTERFACE */
+
+static bool check_for_wayland(Display *dpy)
+{
+	bool		has_xwayland_devices = false;
+	XDeviceInfo	*info;
+	int		ndevices, i;
+
+	info = XListInputDevices(dpy, &ndevices);
+	for (i = 0; i < ndevices; i++) {
+		if (strncmp(info[i].name, "xwayland-", 9) == 0) {
+			has_xwayland_devices = true;
+			break;
+		}
+	}
+	XFreeDeviceList(info);
+
+	return has_xwayland_devices;
+}
 
 int main (int argc, char **argv)
 {
@@ -2855,6 +2898,13 @@ int main (int argc, char **argv)
 		return -1;
 	}
 
+	if (check_for_wayland(dpy)) {
+		fprintf(stderr,
+			"Wayland devices found but this tool is incompatible with Wayland. See\n"
+			"https://github.com/linuxwacom/xf86-input-wacom/wiki/Wayland\n");
+		return 1;
+	}
+
 	if (!do_list && !do_get && !do_set)
 	{
 		if (optind < argc)
@@ -2888,15 +2938,16 @@ int main (int argc, char **argv)
 	XCloseDisplay(dpy);
 	return 0;
 }
-#endif
+#endif /* ENABLE_TESTS */
 
-#ifdef BUILD_TEST
+#ifdef ENABLE_TESTS
+#include "wacom-test-suite.h"
 #include <assert.h>
 /**
  * Below are unit-tests to ensure xsetwacom continues to work as expected.
  */
 
-static void test_is_modifier(void)
+TEST_CASE(test_is_modifier)
 {
 	char i;
 	char buff[5];
@@ -2926,7 +2977,7 @@ static void test_is_modifier(void)
 	}
 }
 
-static void test_convert_specialkey(void)
+TEST_CASE(test_convert_specialkey)
 {
 	char i;
 	const char *converted;
@@ -2970,14 +3021,14 @@ static void test_convert_specialkey(void)
 	}
 }
 
-static void test_parameter_number(void)
+TEST_CASE(test_parameter_number)
 {
 	/* If either of those two fails, a parameter was added or removed.
 	 * This test simply exists so that we remember to properly
 	 * deprecated them.
 	 * Numbers include trailing NULL entry.
 	 */
-	assert(ARRAY_SIZE(parameters) == 39);
+	assert(ARRAY_SIZE(parameters) == 40);
 	assert(ARRAY_SIZE(deprecated_parameters) == 17);
 }
 
@@ -3010,7 +3061,7 @@ static void _test_conversion(const param_t *param, const char **words,
 	}
 }
 
-static void test_convert_value_from_user(void)
+TEST_CASE(test_convert_value_from_user)
 {
 	param_t test_nonbool =
 	{
@@ -3056,12 +3107,11 @@ static void test_convert_value_from_user(void)
 }
 
 
+extern void wcm_run_tests(void); /* see wacom-test-suite.c */
+
 int main(int argc, char** argv)
 {
-	test_parameter_number();
-	test_is_modifier();
-	test_convert_specialkey();
-	test_convert_value_from_user();
+	wcm_run_tests();
 	return 0;
 }
 

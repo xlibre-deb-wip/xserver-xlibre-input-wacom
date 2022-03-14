@@ -16,9 +16,7 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif
 
 #include <errno.h>
 #include <fcntl.h>
@@ -55,8 +53,10 @@ int open_device(const char *path)
 	TRACE("Opening device '%s'.\n", path);
 	fd = open(path, O_RDWR | O_NOCTTY);
 
-	if (fd < 1)
+	if (fd < 1) {
 		perror("Failed to open device file");
+		goto out;
+	}
 
 	if (ioctl(fd, TIOCGSERIAL, &ser) == -1)
 	{
@@ -217,7 +217,7 @@ int read_data(int fd, unsigned char* buffer, int min_len)
 	TRACE("Reading %d bytes from device.\n", min_len);
 redo:
 	do {
-		int l = read(fd, &buffer[len], min_len);
+		int l = read(fd, &buffer[len], min_len - len);
 
 		if (l == -1) {
 			if (errno != EAGAIN) {
