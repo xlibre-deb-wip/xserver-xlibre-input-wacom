@@ -1,3 +1,10 @@
+xf86-input-wacom (1.0.0-2) unstable; urgency=high
+
+  * debian/rules: Use non-multiarch dir for xorg module.
+    (Closes: #1007697)
+
+ -- Boyuan Yang <byang@debian.org>  Tue, 15 Mar 2022 10:29:25 -0400
+
 xf86-input-wacom (1.0.0-1) unstable; urgency=medium
 
   * New upstream release. (Closes: #964106)
