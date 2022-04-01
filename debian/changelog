@@ -1,3 +1,10 @@
+xf86-input-wacom (1.0.0-4) UNRELEASED; urgency=medium
+
+  * Remove constraints unnecessary since buster:
+    + Build-Depends: Drop versioned constraint on xserver-xorg-dev.
+
+ -- Debian Janitor <janitor@jelmer.uk>  Fri, 01 Apr 2022 13:55:18 -0000
+
 xf86-input-wacom (1.0.0-3) unstable; urgency=medium
 
   * debian/watch: Fix monitoring script.

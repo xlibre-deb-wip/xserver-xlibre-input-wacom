@@ -10,7 +10,7 @@ Build-Depends:
  libxinerama-dev,
  libxrandr-dev,
  pkg-config,
- xserver-xorg-dev (>= 2:1.9.4),
+ xserver-xorg-dev,
  xutils-dev,
 Standards-Version: 4.6.0
 Homepage: https://linuxwacom.github.io/
