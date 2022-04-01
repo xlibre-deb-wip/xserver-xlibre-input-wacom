@@ -19,7 +19,7 @@ Vcs-Browser: https://salsa.debian.org/debian/xf86-input-wacom
 
 Package: xserver-xorg-input-wacom
 Section: x11
-Architecture: any
+Architecture: linux-any
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
