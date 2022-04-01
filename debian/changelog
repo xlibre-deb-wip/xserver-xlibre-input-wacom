@@ -1,3 +1,11 @@
+xf86-input-wacom (1.0.0-3) unstable; urgency=medium
+
+  * debian/watch: Fix monitoring script.
+  * debian/control: Restrict arch to linux-any since this project
+    is not for non-linux.
+
+ -- Boyuan Yang <byang@debian.org>  Fri, 01 Apr 2022 09:27:06 -0400
+
 xf86-input-wacom (1.0.0-2) unstable; urgency=high
 
   * debian/rules: Use non-multiarch dir for xorg module.
