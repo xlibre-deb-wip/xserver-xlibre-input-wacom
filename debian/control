@@ -10,8 +10,6 @@ Build-Depends:
  libxinerama-dev,
  libxrandr-dev,
  pkg-config,
- python3 <!nocheck>,
- python3-pytest <!nocheck>,
  xserver-xorg-dev,
  xutils-dev,
 Standards-Version: 4.6.1

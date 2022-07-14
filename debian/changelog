@@ -7,7 +7,6 @@ xf86-input-wacom (1.1.0-1) unstable; urgency=medium
   [ Boyuan Yang ]
   * New upstream release.
   * debian/control: Bump Standards-Version to 4.6.1.
-  * debian/control: Add build-test-dependency python3-pytest.
   * debian/upstream/signing-key.asc: Add upstream signing key.
 
  -- Boyuan Yang <byang@debian.org>  Thu, 14 Jul 2022 10:19:13 -0400
