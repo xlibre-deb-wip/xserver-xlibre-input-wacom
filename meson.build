@@ -1,5 +1,5 @@
 project('xf86-input-wacom', 'c',
-	version : '1.0.0', # bump version in configure.ac
+	version : '1.1.0', # bump version in configure.ac
 	license : 'MIT/Expat',
 	default_options : [ 'c_std=gnu99', 'warning_level=2' ],
 	meson_version : '>= 0.51.0')
@@ -22,8 +22,9 @@ dir_include	= 'include'
 cc = meson.get_compiler('c')
 
 cflags = [
+	# '-Wall', handled through meson's warning_level option
+	# '-Wextra', handled through meson's warning_level option
 	'-Wno-unused-parameter',
-	'-Wno-sign-compare',	 # lots of work to get rid of this
 	'-Wmissing-prototypes',
 	'-Wstrict-prototypes',
 	'-Wlogical-op',
@@ -35,10 +36,13 @@ cflags = [
 	'-Wredundant-decls',
 	'-Wincompatible-pointer-types',
 	'-Wformat=2',
-	'-Wno-missing-field-initializers',
+	'-Wformat-overflow=2',
+	'-Wformat-signedness',
+	'-Wformat-truncation=2',
 	'-Wmissing-declarations',
-
-	'-fvisibility=hidden',
+	'-Wshift-overflow=2',
+	'-Wstrict-overflow=2',
+	'-Wswitch-enum',
 ]
 add_project_arguments(cc.get_supported_arguments(cflags), language : 'c')
 add_project_arguments('-D_GNU_SOURCE', language : 'c')
@@ -114,7 +118,7 @@ if get_option('debug-messages')
 endif
 
 if get_option('fuzzinterface')
-	config_h.set10('BUILD_FUZZINTERFACE')
+	config_h.set10('BUILD_FUZZINTERFACE', true)
 endif
 
 
@@ -148,6 +152,9 @@ shared_module(
 	name_prefix: '', # we want wacomdrv.so, not libwacomdrv.so
 	install_dir: dir_xorg_modules,
 	install: true,
+	# Note: xorg-xserver.pc always appends -fvisibility=hidden so
+	# this correct but superfluous
+	gnu_symbol_visibility: 'hidden',
 )
 
 conf_pkgconf = configuration_data()
@@ -203,12 +210,14 @@ if build_gwacom
 		dep_libevdev,
 	]
 
-	lib_gwacom = both_libraries(
+	lib_gwacom = shared_library(
 		'gwacom',
 		src_libgwacom + src_wacom_core,
 		include_directories: [dir_src, dir_include],
 		dependencies: deps_gwacom,
 		install: false,
+		# Note: xorg-xserver.pc always appends -fvisibility=hidden so
+		# this is the only way to force default visibility
 		c_args: ['-fvisibility=default'],
 	)
 
@@ -225,7 +234,7 @@ if build_gwacom
 		sources: src_gwacom,
 		dependencies: [deps_gwacom],
 		namespace: 'wacom',
-		nsversion: '@0@.@1@'.format(wacom_version[0], wacom_version[1]),
+		nsversion: '1.0',
 		identifier_prefix: 'Wacom',
 		symbol_prefix: 'wacom',
 		includes: 'GObject-2.0',
@@ -340,6 +349,8 @@ if build_unittests
 		dependencies: [dep_xserver, dep_m],
 		name_prefix: '', # we want wacom_drv_test.so, not libwacom_drv_test.so
 		install: false,
+		# Note: xorg-xserver.pc always appends -fvisibility=hidden so
+		# this is the only way to force default visibility
 		c_args: ['-DENABLE_TESTS', '-fvisibility=default'],
 	)
 	dep_dl = cc.find_library('dl')
@@ -356,6 +367,30 @@ if build_unittests
 		]
 	)
 
+	devenv = environment()
+	devenv.set('LD_LIBRARY_PATH', meson.current_build_dir())
+	devenv.set('GI_TYPELIB_PATH', meson.current_build_dir())
+
+	# pytest doesn't like asan or ubsan
+	if build_gwacom and get_option('b_sanitize') == 'none'
+		pymod = import('python')
+		pymod.find_installation(
+			'python3',
+			modules: ['libevdev', 'pytest', 'yaml', 'attr', 'gi']
+		)
+
+		pytest = find_program('pytest-3', 'pytest')
+		test('pytest',
+		     pytest,
+		     args: ['--verbose', '--log-level=DEBUG'],
+		     env: devenv,
+		     workdir: meson.current_source_dir(),
+		)
+	endif
+
+	if meson.version().version_compare('>= 0.58.0')
+		meson.add_devenv(devenv)
+	endif
 endif
 
 

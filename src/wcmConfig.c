@@ -153,8 +153,12 @@ wcmSetFlags(WacomDevicePtr priv, WacomType type)
 		case WTYPE_PAD:
 			flags = ABSOLUTE_FLAG|PAD_ID;
 			break;
+		case WTYPE_INVALID:
 		default:
-			goto invalid;
+			wcmLog(priv, W_ERROR,
+			    "No type or invalid type specified.\n"
+			    "Must be one of stylus, touch, cursor, eraser, or pad\n");
+			return FALSE;
 	}
 
 	priv->flags = flags;
@@ -168,13 +172,6 @@ wcmSetFlags(WacomDevicePtr priv, WacomType type)
 	priv->tool->typeid = DEVICE_ID(flags); /* tool type (stylus/touch/eraser/cursor/pad) */
 
 	return TRUE;
-
-invalid:
-	wcmLog(priv, W_ERROR,
-		    "No type or invalid type specified.\n"
-		    "Must be one of stylus, touch, cursor, eraser, or pad\n");
-
-	return FALSE;
 }
 
 int wcmGetPhyDeviceID(WacomDevicePtr priv)
@@ -697,6 +694,22 @@ static inline WacomType getType(const char *type)
 	return wtype;
 }
 
+static inline Bool filter_test_suite(WacomDevicePtr priv)
+{
+	bool is_test_device = wcmOptGetBool(priv, "_testdevice", FALSE);
+	bool is_test_suite_run = getenv("WACOM_RUNNING_TEST_SUITE") != NULL;
+
+	if (is_test_device == is_test_suite_run)
+		return FALSE;
+
+	if (is_test_device)
+		wcmLog(priv, W_INFO, "Ignoring test device '%s'\n", priv->name);
+	else if (is_test_suite_run)
+		wcmLog(priv, W_INFO, "Ignoring device '%s' during test suite run\n", priv->name);
+
+	return TRUE;
+}
+
 /* wcmPreInit - called for each input devices with the driver set to
  * "wacom" */
 int wcmPreInit(WacomDevicePtr priv)
@@ -706,6 +719,11 @@ int wcmPreInit(WacomDevicePtr priv)
 	char		*oldname = NULL;
 	int		need_hotplug = 0, is_dependent = 0;
 	int		fd = -1;
+
+	/* Ignore real devices during test suite runs, or test devices during
+	 * normal operation */
+	if (filter_test_suite(priv))
+		goto SetupProc_fail;
 
 	/*
 	   Init process:
@@ -1003,7 +1021,7 @@ Bool wcmDevInit(WacomDevicePtr priv)
 	nbbuttons = min(max(nbbuttons + 4, 7), WCM_MAX_BUTTONS);
 
 	DBG(10, priv,
-		"(type %d) %d buttons, %d axes\n",
+		"(type %u) %d buttons, %d axes\n",
 		priv->type, nbbuttons, nbaxes);
 
 	if (!wcmInitButtons(priv, nbbuttons))
@@ -1223,12 +1241,11 @@ TEST_CASE(test_set_type)
 
 TEST_CASE(test_flag_set)
 {
-	int i;
 	unsigned int flags = 0;
 
-	for (i = 0; i < sizeof(flags); i++)
+	for (size_t i = 0; i < sizeof(flags); i++)
 	{
-		int mask = 1 << i;
+		unsigned int mask = 1 << i;
 		flags = 0;
 
 		assert(!MaskIsSet(flags, mask));

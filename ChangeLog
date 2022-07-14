@@ -1,3 +1,736 @@
+commit f2df07587e5ff89a6c5b2246bc468211c31cf43a
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jul 14 13:45:32 2022 +1000
+
+    wacom 1.1.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e71404e3d500762ea25e40ec7d0c4a34d3978762
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jul 14 13:57:37 2022 +1000
+
+    meson.build: fixate the GIR namespace version to 1.0
+    
+    This is more like a soname version than a project version - keeping it
+    in step with the driver version means we also have to update each
+    callsite. But it looks like we'll be stable for this for a while, so
+    let's just fixate it.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit f53fbcafc277bb750e0584584bf58d1d3d8353df
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Jun 13 11:19:36 2022 +1000
+
+    gitignore: add __pycache__
+    
+    Might as well not accidentally commit this one
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0dc0b101bf49731cdb7946835bd3bd2045d036d8
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Jun 10 21:00:26 2022 +1000
+
+    test: add a test for the artpen/airbrush wheel updates
+    
+    This was slightly too complicated to add to the existing
+    test_axis_updates test, so that test is duplicated here, only testing
+    what we see as "wheel" axis in the driver.
+    
+    The test is run for all three pens
+    
+    Because the X driver unconditionally sets ds->abswheel from the kernel
+    events, we must take care only to send the kernel axis that matters for
+    our current tool - otherwise we overwrite ds->abswheel with whichever
+    one of ABS_Z or ABS_WHEEL is sent last in the evdev frame.
+    In other words, we cannot test that artpen ignores ABS_WHEEL and
+    airbrush ignores ABS_Z because ... they don't.
+    
+    For the generic pen that doesn't matter since we're supposed to ignore
+    both axes anyway.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Ping Cheng <ping.cheng@wacom.com>
+    Tested-by: Ping Cheng <ping.cheng@wacom.com>
+
+commit be3471293363b518eb07a1eb041fb3e548de1bef
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Jun 13 10:08:08 2022 +1000
+
+    meson: default to pytest-3 first, then pytest
+    
+    At least Ubuntu 20.04 has pytest point at the Python 2.x compatible
+    version, resulting in syntax errors when trying to parse our Python 3
+    code files. So let's check pytest-3 first since that is the compatible
+    version and fall back to normal pytest only where it's missing.
+    
+    Fixes #272
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 15802a3871d15fcbd1a510b85715e633b11e078a
+Author: Greenscreener <honzikcernoh@gmail.com>
+Date:   Sat Jun 11 14:58:55 2022 +0200
+
+    Added vim modelines to python files.
+
+commit d5b61195553094f316015facb0d7a7ac2954d1b2
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Jun 8 14:44:05 2022 +1000
+
+    test: raise an InputError with better info if modules are missing
+    
+    The tests need to run as root (for uinput/evdev) so pip-installing a
+    package as user gets past the build check but then fails at runtime.
+    Let's make this bit easier to debug.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit c44522c1f2c4487e1629435aa45b545c1d0279e9
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Jun 8 14:43:30 2022 +1000
+
+    meson.build: default to verbose pytest logging
+    
+    Might as well collect as much data as we can get
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 073556d13e3937735983fb32e2704a5aaa51e435
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue May 24 11:07:37 2022 -0700
+
+    test: Ensure standard pen does not report the "wheel" axis
+    
+    The event data has a mask field that specifies which fields are actually
+    present (zero may be a valid value for an axis after all). Let's check
+    that mask for each event and ensure that if the pen supports the axis,
+    the axis is also present in the event.
+    
+    We still send kernel events for all axes to ensure the unsupported ones
+    are correctly ignored by the driver.
+    
+    This allows us to parametrize the test with different stylus types and
+    re-use the rest. Here we add a standard Cintiq pen and make sure the
+    wheel axis is never set.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 817e77f5a7502cc9258d1e41e5f2863a498d104f
+Author: Aaron Armstrong Skomra <aaron.skomra@wacom.com>
+Date:   Tue May 24 11:20:38 2022 -0700
+
+    Don't report "wheel" valuator unless it exists on tool
+    
+    Fixes #199
+    
+    Prior to this commit we operated as if all non Art Pens needed
+    this valuator normalized.
+    
+    Signed-off-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit 6fd9efcd269e7bd879c62044d176007df8d659d8
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon May 23 13:43:30 2022 +1000
+
+    test: ignore test devices, or real devices during test suite runs
+    
+    Set an option on all our created uinput devices, and an environment
+    variable when we're running the test suite. If both of these are set we
+    process the device, otherwise ignore the device during PreInit.
+    
+    This stops the driver picking up events from test suite runs
+    (potentially clicking around on the desktop) and it stops the test suite
+    from false positives by locally connected devices.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 00473a30a0c5a6558a3c0491fc5808baaf711702
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon May 23 13:24:13 2022 +1000
+
+    test: fix a typo
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fd10a749f93e9bf7458c3f039fae61802234b8d4
+Author: Joshua <Joshua@Joshua-Dickens.com>
+Date:   Sun May 22 18:35:21 2022 -0700
+
+    Fix xsetwacom returning 0 even when there's an error (#266)
+    
+    xsetwacom was only able to return a failure on a few scenarios but
+    would return a success even when the command would encounter failures.
+    
+    List, set, get, and some other functions within those all had the potential
+    to fail and would print an error message when said failures occurred
+    but would improperly return a success.
+    
+    This commit adds the ability to properly report a success(0) or a failure(-1)
+    to the relevant functions including all get and set methods that can be
+    called by get_func and set_func.
+    
+    Link: https://github.com/linuxwacom/xf86-input-wacom/issues/126
+    Signed-off-by: Joshua Dickens <joshua.dickens@wacom.com>
+
+commit bcd984bdc353f2b4524debe36a11f58d0e81f346
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 10:45:47 2022 +1000
+
+    test: add a test for the artpen rotation
+    
+    The artpen has a physical rotation property, sent by the kernel driver
+    as ABS_Z (historical reasons). In the driver this is mapped to the
+    ds->abswheel state because this axis is shared with the airbrush wheel -
+    both are sent through the same XI valuator (historical reasons, as
+    usual).
+    
+    We can rather easily test this by ensuring we have an artpen device id
+    and then send something through ABS_Z, that should update the wheel
+    axis.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit 1f21c8c7fca37c15e0d8a6f7c7f89519c5947829
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 09:49:51 2022 +1000
+
+    test: ensure a device prox out after our events
+    
+    This avoids a potential stuck button by leaving the tablet in proximity.
+    Shouldn't happen since removing the device should release all buttons
+    but...
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit 2f1a7ae905886fb1441d45b97c8e9952a1c3a878
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 09:45:32 2022 +1000
+
+    test: swap the axis checks for an iterator-based approach
+    
+    This ensures we get a StopIteration exception if we don't have the
+    events we expect - previously we'd get a false positive on this test if
+    we had no motion events after the first one.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit 4d3bbc84e026ad4f7513d54432c26ae49b2fdd4d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 09:52:49 2022 +1000
+
+    test: increase the count of events for axis update tests
+    
+    Make it 30% of the axis in 2% step increments, this gets past the issue
+    of tilt not updating significantly and getting filtered.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit 5d4ef8ac9088427dabbe5b6d5e367bb44c1d59bc
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 10:41:03 2022 +1000
+
+    test: fix the ID assignment when parsing a device file
+    
+    Because InputId didn't have the same field order as the recording (to
+    allow for default bustype, vid and version), we ended up with an
+    erroneous vendor ID, causing some code paths in the driver to go the
+    non-wacom path.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit 1b7d64565cda276dbd20e0b67a9bb88ef538a7f3
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 09:22:04 2022 +1000
+
+    test: add a helper script to set up the environment
+    
+      $ sudo ./test/wacom-test-env.sh
+      $ pytest
+    
+    A lot easier this way than having to manually set the environment
+    variables.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit 09567517939109cbaf9928a36e43e86bd1d71082
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 10:11:04 2022 +1000
+
+    Document the rotation/wheel axes, they're not what you'd expect
+    
+    For historical reasons, the rotation axis is actually the cursor
+    rotation only, the artpen rotation is mixed in with the airbrush wheel
+    (which is scaled in to the rotation range).
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit a94a845af196f49fdcece8958dc1320c0296b518
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 10:06:58 2022 +1000
+
+    Add a few missing breaks for the default case
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit a6828caa94f5fd9c81880eb11da294eed9cc48af
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 5 10:25:44 2022 +1000
+
+    Make a debug message easier to understand
+    
+    We printed the device type as "tool id", let's print both but with the
+    right naming.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Aaron Skomra <aaron.skomra@wacom.com>
+
+commit 742c3e4494bf89301031ba6a627a7f5d5f49556f
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Thu Apr 7 09:56:00 2022 -0700
+
+    Allow negative panscroll threshold for inverted scrolling
+    
+    The driver's "pan" feature allows you to send scroll events by holding down
+    a defined stylus button and dragging the pen. Dragging the pen from top
+    to bottom will cause the driver to send scroll-up events, and vice-versa.
+    This simulates physically dragging the page under the cursor and works
+    particularly well with display tablets.
+    
+    The rate at which scroll events are sent is controlled by comparing the
+    distance the pen has moved "down" to a defined threshold value. If the
+    distance exceeds the threshold a scroll-up event is sent; if it exceeds
+    the the threshold * -1 a scroll-down event is sent.
+    
+    This commit allows the driver to accept negative threshold values to
+    produce an inverted scrolling behavior (i.e. dragging the pen from top
+    to bottom causes scroll-down events instead of scroll-up). To do this
+    we just relax the checks performed at device configuration and property
+    setting (affecting the "PanScrollThreshold" driver option and "Wacom
+    Panscroll Threshold" Xinput property, respectively).
+    
+    Link: https://github.com/linuxwacom/xf86-input-wacom/issues/257
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 1ca6fca7932d540ea7765bb9f66be050f61592aa
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Feb 24 10:54:20 2022 +1000
+
+    meson.build: comment out -Wall -Wextra
+    
+    These are handled as part of meson's warning_level project option
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit c0f77b600122a3d8bdefa7a20a84f4049681d1e7
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 22 09:30:41 2022 +1000
+
+    meson: use gnu_symbol_visibility - sort-of
+    
+    meson has gnu_symbol_visibility which is set correctly depending on the
+    compiler. Except - where the X server was built with a
+    symbol-visibility-supporting compiler it will always force
+    -fvisibility=hidden into the cflags, see
+    https://gitlab.freedesktop.org/xorg/xserver/-/issues/1316
+    
+    Meson sorts pkgconf cflags after the gnu_symbol_visibility flag so the
+    pkgconf cflag overrides our gnu_symbol_visibility flag.
+    Make a note on this so no-one else has to spend time wondering about and
+    debugging this.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit b534f8fba8dbf3dc373db27c1b2b6e3103923e28
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 22 09:00:11 2022 +1000
+
+    meson.build: only build libgwacom.so, not the static one
+    
+    We don't need the static one
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 5390ebb2f55f40a3d41f4352447fb603ab4e2fd2
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Sat Feb 19 12:16:55 2022 -0800
+
+    Enable additional compiler warnings by default
+    
+    Removes the two `-Wno-xxxx` directives from out default set of build flags
+    enables several new warnings as well.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit e217fe67690ff8d00af6ccc2bbe65720af21a979
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Fri Feb 18 13:51:20 2022 -0800
+
+    Move -Wall and -Wextra from Github-only to default CFLAGS
+    
+    These two options were previously only being used by the Github runner.
+    Lets move them to configure.ac / meson.build so that we encounter these
+    warnings on our build system **before** pushing things to Github. The
+    only thing Github should have is `-Werror` and friends.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit b708574c48b5e57dc5fc7efa4ec7d102c062071f
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Fri Feb 18 13:44:54 2022 -0800
+
+    autotools: Use the same set of CFLAGS as Meson builds
+    
+    When building with Meson, a number of CFLAGS are automatically used
+    if supported by the compiler. Lets copy them over so that the same
+    behavior will occur for autotools users. While we're at it, update
+    the other target-specific flags to also better match Meson.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit b998b68107b4a9b6116b271c858dfbcb29435789
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Sat Feb 19 16:11:23 2022 -0800
+
+    Remove superflous 'invalid' label in wcmSetFlags
+    
+    This label is only taken in a single error case. We should handle the
+    error at the point we detect it, not after jumping to yet another label.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 18ac7bc40be89ccc49ec9f17583503989944069d
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Sat Feb 19 15:44:40 2022 -0800
+
+    Avoid truncated output warning in wcmAxisDump
+    
+    GCC seems to be confused by our code pattern and insists that our
+    buffer isn't large enough (no matter how large we might make it)
+    and may result in truncated snprintf output. Modify the structure
+    to achieve the same effect in a different way that GCC doesn't
+    mind.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 571fbced64a51259ea7825c737f1703a0eb6bdf5
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Sat Feb 19 15:12:45 2022 -0800
+
+    Correct buffer size passed to wcmAxisValue
+    
+    Thankfully the incorrect `sizeof(data)` is less than the actual
+    `sizeof(value)`, so there's no chance of some kind of buffer
+    overflow in the existing code.
+    
+    Fixes: e8015b67000b ("Revamp debug printing of axis data")
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit a5a0b5bf0f855ac0a5501147de5147a520b8b9d2
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Wed Feb 16 16:34:50 2022 -0800
+
+    Fix sign-compare warnings caused by clang's integer abs()
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit d9e92778ccc89bec74e361f8d4fcc7c24002d2bc
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Sat Feb 19 12:10:18 2022 -0800
+
+    wacom-record: Change syntax for null struct initalization
+    
+    Avoid a -Wmissing-field-initializers warning from Clang, which apparently
+    recognizes `{ 0 }` and `{ }` as valid patterns, but not `{ NULL }`.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit df632685d02939957bebc61c4df5617652ce608e
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Wed Feb 16 16:24:16 2022 -0800
+
+    wacom-record: Print unsigned values with %u rather than %d
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 19a2ac80507aca77c9e30f445c9e245c474c7865
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Thu Jan 27 17:13:24 2022 -0800
+
+    Explicitly check for WTYPE_INVALID in switch statements
+    
+    Avoid a Wswitch-enum warning.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit ef372acece43c5cce16e61795a15050a5bcb1726
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Jan 4 13:54:46 2022 -0800
+
+    Misc. unsigned warning fixes
+    
+    Address a few more unsigned changes that don't fit in elsewhere.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit cd02945a778132bcb63db5afec9747a15ade0033
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Wed Jan 26 15:43:34 2022 -0800
+
+    Treat value of proxout property as signed
+    
+    While negative / extremely large values are both invalid, migrating the
+    code to handle surface distances in an unsigned way is much more trouble
+    than its worth (due in part to some tablets reporting distance in an
+    opposite sense than others). It is more straightforward to leave them
+    signed for now and just treat the proxout property as also signed.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 3287bf8dd89f7d57dcbab61090f92880e01e2e77
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Wed Jan 26 15:39:43 2022 -0800
+
+    Store serial numbers as unsigned values
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 23f2c7fcf77dc7f4a42864bc66ef91162137577a
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Wed Jan 26 13:54:22 2022 -0800
+
+    Change signature of Parse function to take unsigned packet length
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit ce2ec765c2fa57d3f4a1b833f424ced2cf8ba53c
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Thu Jan 27 11:28:09 2022 -0800
+
+    Make devicestate sample and time variables unsigned
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 52803bf0a87772bb6ca837c68e68911909a6cd53
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Jan 4 13:48:59 2022 -0800
+
+    xsetwacom: Make prop_offset unsigned
+    
+    Note that in one instance we actually end up re-assigning the value of
+    prop_offset to a signed variable to avoid additional warnings.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 846c6f51f7c959f984e60064306610f2408a5ffa
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Jan 4 11:54:43 2022 -0800
+
+    gesture: Make gesture distances and counts unsigned
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit e981a1c1c70b4ed6a34cfac2cde872905e89f4ed
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Jan 4 11:40:06 2022 -0800
+
+    gesture: Use unsigned integers for finger indicies
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit fe50ba4c0048d58f09489ad85f11c0ae4838b5b9
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Jan 4 11:33:43 2022 -0800
+
+    Make wcmEventCnt an unsigned int
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit ca19d531ab888e9ff80d5beb26af366061a2edd5
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Jan 4 11:24:16 2022 -0800
+
+    Store button state as unsigned int
+    
+    The WacomDeviceState structure uses an unsigned int to store keys and
+    some functions that operate on keys and buttons are already set up to
+    work with unsigned values. Make buttons unsigned for consistency with
+    keys and to reduce warnings.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 0962f67b2c7660fdbdf80a189b90b0e37e61314d
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Jan 4 10:29:54 2022 -0800
+
+    tools: Report when the entire buffer is garbage
+    
+    Most callers silently ignore the case where `skip_garbage` returns a
+    negative result. This function changes the function signature to let us
+    return an unsigned count and then has the caller make some noise when
+    this would have happened. Correct various unsigned issues along the way.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 869f32c7b98632974f23606d2d706a69e7cc0b69
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Wed Jan 26 12:58:20 2022 -0800
+
+    Use locally-declared unsigned loop variables to eliminate warnings
+    
+    We often use the prototypical `int i` loop variable but sometimes we're
+    iterating over a loop with an unsigned bound. This is low-hanging fruit
+    for cleaning up some of the "Wsign-compare" warnings that exist in the
+    driver. While we're at it, take the opportunity to make many of these
+    loops use local declarations -- a feature standardized way back in
+    1999 alongside other blockbusters like The Matrix.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 465412be96b8e1967bd21209af54a11f0c7b0cc3
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Thu Jan 27 16:05:05 2022 -0800
+
+    Fix -Wformat-signedness warnings
+    
+    Fix the various warnings about us printing an unsigned value as signed
+    (or vice-versa).
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit f1c9d9a118cc14057fcf859c9f71de0ae0ad2e18
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Thu Jan 27 16:23:11 2022 -0800
+
+    Avoid Wformat-overflow warning
+    
+    Increase the size of buffer we write our string into to silence a warning
+    from stricter levels of Wformat-overflow.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 7d6d15d5c6d7e2cd6dbb54b20fdadc2e5b658564
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Feb 15 10:07:10 2022 -0800
+
+    cppcheck: Avoid uninitalized variable warning
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit b1555a21c801c2eaab320c57291c95034dc45468
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Feb 15 08:28:52 2022 -0800
+
+    scan-build: Silence dead-store warning from intentionally-ignored value
+    
+    We don't care about the result from `read`, but it seems that Coverity
+    was complaining that we didn't use its result. We hacked around this
+    by simply storing it into `rc`, but now scan-build complains that this
+    value is also never used. This commit further-refines the hack to
+    silence both Coverity and scan-build.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit b3741a1687a53edc4e7115b886dc4796f3096f1e
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Tue Feb 15 08:06:52 2022 -0800
+
+    scan-build: Remove dead-store to subproperty variable
+    
+    This dead-store was introduced in commit 59925bd45b71 ("NONE is not a
+    valid action, and NULL a bad value"). The code which previously relied
+    on subproperty being non-zero was moved into a seperate `else` block
+    that is no longer executed in the case where subproperty is zero.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit ad8b081fab7c5e0889f0102fb41e2458d98c4164
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Thu Jan 27 11:58:06 2022 -0800
+
+    scan-build: Silence spurious null pointer warning when initializing tools
+    
+    The scan-build tool notices that we can trigger a null dereference if
+    the value of `common->wcmTool` is NULL. This pointer is allocated and
+    assigned at initialization, however, so we should be able to avoid the
+    warning by simply asserting that it is non-null.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 1f18309d63cf979afdeba6e8f5b67253b7d36a21
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Thu Jan 27 11:55:53 2022 -0800
+
+    scan-build: xsetwacom: Avoid dead-store when parsing actions
+    
+    The scan-build utility detects that the expression `j = parsed = 0`
+    was causing a dead store to the value of `parsed`. Rather than simply
+    removing the store to parsed, re-format the code to avoid making its
+    value visible outside of the `if` block alltogether.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 65a1fd43e3bf73e0d47a17da3b019f81ba3b680b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Feb 10 09:35:21 2022 +1000
+
+    test: add a test for the single-axis updates
+    
+    Just a test that if we change x, only x changes in the events.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 8a01c35b4cb8f86c996ab63baa589a3841449a11
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Feb 9 10:25:07 2022 +1000
+
+    test: add a test for the relative motion issue
+
+commit 858bb568716f19fd3973088a2af237904584fea9
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 8 22:09:46 2022 +1000
+
+    test: add a pytest test suite
+    
+    This test suite makes use of the gwacom library and its GObject
+    bindings, allowing us to write the actual tests in python.
+    
+    Real devices can be specified as a YAML file in test/devices.
+    In the tests we can either create custom device or load the correct
+    Pen/Finger/Pad component from the real device. Devices are then created
+    as uinput devices [1], with a Monitor class set up to capture any
+    events.
+    
+    The test needs to initialize that device and monitor, then play events
+    through the device and analyze the output.
+    
+    [1] This unfortunately won't work in containers, like the github CI...
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit dbe4f9e687a481020ad27b495b6f16c2767f0814
+Author: Jason Gerecke <jason.gerecke@wacom.com>
+Date:   Wed Feb 16 15:04:56 2022 -0800
+
+    meson: Fix fuzzinterface build option
+    
+    Trying to enable this option results in the following configuration
+    error:
+    
+        meson.build:117:10: ERROR: Configuration set requires 2 arguments.
+    
+    Signed-off-by: Jason Gerecke <jason.gerecke@wacom.com>
+
 commit 1534ca8778ca62dda988929422bfa11217071ec8
 Author: Peter Hutterer <peter.hutterer@who-t.net>
 Date:   Tue Feb 15 11:19:37 2022 +1000
