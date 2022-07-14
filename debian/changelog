@@ -1,9 +1,16 @@
-xf86-input-wacom (1.0.0-4) UNRELEASED; urgency=medium
+xf86-input-wacom (1.1.0-1) unstable; urgency=medium
 
+  [ Debian Janitor ]
   * Remove constraints unnecessary since buster:
     + Build-Depends: Drop versioned constraint on xserver-xorg-dev.
 
- -- Debian Janitor <janitor@jelmer.uk>  Fri, 01 Apr 2022 13:55:18 -0000
+  [ Boyuan Yang ]
+  * New upstream release.
+  * debian/control: Bump Standards-Version to 4.6.1.
+  * debian/control: Add build-test-dependency python3-pytest.
+  * debian/upstream/signing-key.asc: Add upstream signing key.
+
+ -- Boyuan Yang <byang@debian.org>  Thu, 14 Jul 2022 10:19:13 -0400
 
 xf86-input-wacom (1.0.0-3) unstable; urgency=medium
 
