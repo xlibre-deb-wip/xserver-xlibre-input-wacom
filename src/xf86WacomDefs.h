@@ -68,6 +68,11 @@
 #define BTN_STYLUS3 0x149
 #endif
 
+/* This value is arbitrary, but low enough values can cause integer division to round
+ * non-zero numbers to zero. See https://github.com/linuxwacom/xf86-input-wacom/pull/222#discussion_r927920625.
+ */
+#define PANSCROLL_INCREMENT 0xffff
+
 /******************************************************************************
  * Forward Declarations
  *****************************************************************************/
@@ -302,6 +307,8 @@ struct _WacomDeviceRec
 	WacomTimerPtr serial_timer; /* timer used for serial number property update */
 	WacomTimerPtr tap_timer;   /* timer used for tap timing */
 	WacomTimerPtr touch_timer; /* timer used for touch switch property update */
+
+	ValuatorMask *valuator_mask; /* reusable valuator mask for sending events without reallocation */
 };
 
 #define MAX_SAMPLES	20

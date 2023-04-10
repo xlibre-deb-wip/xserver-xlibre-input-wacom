@@ -1,3 +1,150 @@
+commit 8f655fe3faabc4a44a32504d0ef14fc961f803fb
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Apr 6 11:17:09 2023 +1000
+
+    wacom 1.2.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0bf20b63f35385893f58bcbacbc3d78dc9dcf207
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Dec 7 08:46:32 2022 +1000
+
+    CI: update some actions to v3
+    
+    Node 12 is deprecated so let's switch to the newer version
+    https://github.blog/changelog/2022-09-22-github-actions-all-actions-will-begin-running-on-node16-instead-of-node12/
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fe923e927a8ddf4d2e82ef4757c885b06d47fa03
+Author: Greenscreener <honzikcernoh@gmail.com>
+Date:   Sun Jul 24 15:02:46 2022 +0200
+
+    Implement smooth panscrolling
+
+commit 2a9e5953f89a7085786326e07edcb53ad821aace
+Author: Greenscreener <honzikcernoh@gmail.com>
+Date:   Sun Jul 24 14:48:29 2022 +0200
+
+    Replace valuator array with valuator mask in convertAxes
+    
+    ValuatorMask has been around since xserver 1.10, released in 2011.
+
+commit 6eefde01f04454c8b0df1dedd2bbf77086206c09
+Author: Greenscreener <honzikcernoh@gmail.com>
+Date:   Sun Jul 24 14:41:50 2022 +0200
+
+    Fixing discrepancy in naxes
+    
+    See https://github.com/linuxwacom/xf86-input-wacom/pull/222#discussion_r897908702
+
+commit 66f41d6225b34ca02a4a70d2a101e82c561c51d7
+Author: Ping Cheng <ping.cheng@wacom.com>
+Date:   Wed Nov 2 22:09:36 2022 -0700
+
+    Assign Wacom specific keys only to Wacom devices
+    
+    Most extra features are only for Wacom 0x56a devices. Make them
+    specific so we don't abuse other devices ;).
+    
+    Signed-off-by: Ping Cheng <ping.cheng@wacom.com>
+
+commit 61b7d9061b53f79b5a37a463269bb9c8d45dbe14
+Author: Ping Cheng <ping.cheng@wacom.com>
+Date:   Wed Nov 2 21:55:21 2022 -0700
+
+    Move wcmDeviceTypeKeys to wcmConfig.c
+    
+    There is only one file that needs wcmDeviceTypeKeys. Move it
+    and make it into a static routine to simply the logic. Also,
+    there is no value to return from this routine. It sets the
+    types and keys to the common structure.
+    
+    Signed-off-by: Ping Cheng <ping.cheng@wacom.com>
+
+commit 829a2d996f1a8d8a735c0eb7340797959de03ca8
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Aug 31 11:56:16 2022 +1000
+
+    gwacom: add support for special runtime options
+    
+    This is a hack to make it possible to test options that cannot be set
+    through the xorg.conf, e.g button actions that are set through the
+    X-specific properties interface.
+    
+    Expose a new function for "runtime options", though the actual option
+    implementation needs to be handled in the gwacom wrapper code - i.e.
+    only options explicitly supported can work.
+    
+    The currently supported option is "PanButton" which maps the given
+    button to the PanScroll action.
+
+commit 8e4a77bc28970d23da80838c195550cad4ef8e05
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 1 15:31:47 2022 +1000
+
+    x11: de-duplicate the valuator number assignment
+    
+    Let's add a helper function for this so we can't mess this up.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 1aaa36753c1008733b62cea5f60088ddbddff1e8
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Aug 31 11:35:53 2022 +1000
+
+    Remove useless Wacom action name setting
+    
+    Copy/paste error from when this as lifted from the properties code to
+    the core driver code, in the commits leading up to
+    5326fd126042684338dfb662f48ba2e27be7fa5a.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 23c46706f12982c3baaa03b3b8f53ea72679a136
+Author: Ping Cheng <ping.cheng@wacom.com>
+Date:   Fri Aug 26 15:02:16 2022 -0700
+
+    Bring two finger right-click function back
+    
+    Patch 65b7c37 fixed spurious right-clicks by setting wcmGestureMode
+    back to GESTURE_CANCEL_MODE immediately when there is less than two
+    fingers on the tablet, if the wcmGestureMode was in SCROLL_MODE or
+    ZOOM_MODE.
+    
+    However, it narrowed wcmFingerTapToClick() rotine to LAG_MODE, which
+    removed the opportunity for the routine to executed. Revert that.
+    
+    Fixes: https://github.com/linuxwacom/xf86-input-wacom/commit/65b7c37f0fac5cdd03ff7f977124148d0bdf4be8
+    (Prevent spurious right-clicks at the end of very short scroll and zoom gestures)
+    
+    Signed-off-by: Ping Cheng <ping.cheng@wacom.com>
+
+commit 18ed7697e3049943e3bfef46af6c647b2d93ed8f
+Author: Ping Cheng <ping.cheng@wacom.com>
+Date:   Tue Jul 19 14:01:35 2022 -0700
+
+    Don't report error when waiting for serial number
+    
+    For some devices, such as AES pens, serial number is 0 when tool
+    comes into proximity. That means serial number was not ready. It
+    is a known state. All we needed is to wait for the non-zero serial
+    number. Don't report it through W_ERROR.
+    
+    Signed-off-by: Ping Cheng <ping.cheng@wacom.com>
+
+commit ad11a9da15d4cbef62f4ec1c19a6279ef21710f3
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Jul 25 12:30:14 2022 +1000
+
+    Remove a comment referring to the wrong function
+    
+    The function moved away in e4ea35d56aec59a5de0ef3d9282fdd796d89e6ad,
+    let's drop this comment.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
 commit f2df07587e5ff89a6c5b2246bc468211c31cf43a
 Author: Peter Hutterer <peter.hutterer@who-t.net>
 Date:   Thu Jul 14 13:45:32 2022 +1000
