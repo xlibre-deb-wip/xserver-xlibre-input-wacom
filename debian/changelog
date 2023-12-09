@@ -1,3 +1,13 @@
+xf86-input-wacom (1.2.0-2~exp1) experimental; urgency=medium
+
+  * Upload to experimental for usr-merge file movement.
+
+  [ Chris Hofstaedtler ]
+  * Non-maintainer upload.
+  * Use udev.pc/systemd.pc to place files
+
+ -- Boyuan Yang <byang@debian.org>  Sat, 09 Dec 2023 08:55:19 -0500
+
 xf86-input-wacom (1.2.0-1) unstable; urgency=medium
 
   * Upload to unstable.

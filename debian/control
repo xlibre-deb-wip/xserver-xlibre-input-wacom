@@ -10,6 +10,7 @@ Build-Depends:
  libxinerama-dev,
  libxrandr-dev,
  pkg-config,
+ systemd-dev,
  xserver-xorg-dev,
  xutils-dev,
 Standards-Version: 4.6.1
