@@ -1,3 +1,9 @@
+xf86-input-wacom (1.2.0-2) unstable; urgency=medium
+
+  * Upload to unstable. (Closes: #1057831)
+
+ -- Boyuan Yang <byang@debian.org>  Wed, 13 Dec 2023 14:48:19 -0500
+
 xf86-input-wacom (1.2.0-2~exp1) experimental; urgency=medium
 
   * Upload to experimental for usr-merge file movement.
