@@ -1,7 +1,7 @@
 Source: xf86-input-wacom
 Section: x11
 Priority: optional
-Maintainer: Boyuan Yang <byang@debian.org>
+Maintainer: Debian QA Group <packages@qa.debian.org>
 Build-Depends:
  debhelper-compat (= 13),
  libudev-dev,
