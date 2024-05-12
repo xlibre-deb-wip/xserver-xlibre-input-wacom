@@ -1,3 +1,10 @@
+xf86-input-wacom (1.2.2-1) unstable; urgency=medium
+
+  * QA upload.
+  * New upstream release.
+
+ -- Boyuan Yang <byang@debian.org>  Sun, 12 May 2024 10:07:18 -0400
+
 xf86-input-wacom (1.2.1-1) unstable; urgency=medium
 
   * QA upload.
