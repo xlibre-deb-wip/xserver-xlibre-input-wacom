@@ -2,8 +2,9 @@ xf86-input-wacom (1.2.2-1) unstable; urgency=medium
 
   * QA upload.
   * New upstream release.
+  * debian/control: Update build-dep pkg-config => pkgconf, S-D 4.7.0.
 
- -- Boyuan Yang <byang@debian.org>  Sun, 12 May 2024 10:07:18 -0400
+ -- Boyuan Yang <byang@debian.org>  Sun, 12 May 2024 10:10:49 -0400
 
 xf86-input-wacom (1.2.1-1) unstable; urgency=medium
 
