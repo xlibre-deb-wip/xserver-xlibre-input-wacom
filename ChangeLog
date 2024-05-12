@@ -1,3 +1,67 @@
+commit 418e38f5b5abd823dcc4d68f1009ea48fb936324
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Apr 15 14:56:16 2024 +1000
+
+    xf86-input-wacom 1.2.2
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d55788137c84594754f1d46e4828fa3b8d773368
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Apr 10 11:46:10 2024 +1000
+
+    Fix wcmForeachDevice check in wcmMatchDevice
+    
+    wcmForeachDevice returns 0 for no matches, a negative errno or the
+    greater-than-zero number of matches. In wcmMatchDevice we return either
+    0 or 1 as matchDevice() stops the foreach once the first match is
+    encountered.
+    
+    Fixes: d5ca999f35c7 ("Add a helper function to iterate over local devices to the driver layer")
+    Closes #342
+
+commit f4241514b725377e03ad55b4dbe8750cd3e4e5f4
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 11 10:43:17 2024 +1000
+
+    release.sh: Drop the ancient x"foo" != x comparisons
+    
+    These haven't been needed in decades. Where a string may be empty use
+    quotes, otherwise let's switch string comparisons to just that. And
+    where we check for empty/nonempty use -z/-n.
+
+commit 45e01b7506e075cdb61f514aea065ab28f44e090
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 11 10:37:35 2024 +1000
+
+    release.sh: drop --force and --moduleset
+    
+    No longer hooked into anything so let's not pretend we have it.
+
+commit 29e27f27401fc2a18f8feabc09959cae38cc11ab
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 11 10:36:34 2024 +1000
+
+    release.sh: default to '.' if no module was given
+    
+    Might as well since we only ever release one module at a time with this
+    script.
+
+commit 564e034166141976ba9e88de098043bf6bc73046
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 11 10:33:17 2024 +1000
+
+    release.sh: update to take a --token value (#340)
+    
+    Apparently the old way no longer works, so let's update with a
+    copy/paste from the examples.
+    
+    Intentional switch to use --token because that's how you should be doing
+    releases anyway - with a temporary token that can be revoked after the
+    release is complete (and that also encodes the username).
+    
+    https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28#create-a-release
+
 commit d73eb2ee78670cc2b1d7cc3861f466867ccba479
 Author: Peter Hutterer <peter.hutterer@who-t.net>
 Date:   Mon Mar 4 09:33:07 2024 +1000
