@@ -28,7 +28,7 @@ Index: xf86-input-wacom-salsa/io.github.linuxwacom.metainfo.xml
 +++ xf86-input-wacom-salsa/io.github.linuxwacom.metainfo.xml	2024-07-16 17:34:28.036265423 +0200
 @@ -0,0 +1,15 @@
 +<?xml version="1.0" encoding="UTF-8"?>
-+<component type="desktop">
++<component>
 +  <id>io.github.linuxwacom</id>
 +  <metadata_license>MIT</metadata_license>
 +  <project_license>GPL-2.0+</project_license>
