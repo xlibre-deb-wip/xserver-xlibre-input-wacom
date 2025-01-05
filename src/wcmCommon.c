@@ -513,17 +513,17 @@ static int getScrollDelta(int current, int old, int wrap, int flags)
  * the scrolling axis and the possible events that can be
  * sent.
  *
- * @param delta        Amount of change in the scrolling axis
- * @param action_up    Array index of action to send on scroll up
- * @param action_dn    Array index of action to send on scroll down
- * @return             Array index of action that should be performed, or -1 if none.
+ * @param delta            Amount of change in the scrolling axis
+ * @param action_positive  Array index of action to send on a positive delta
+ * @param action_negative  Array index of action to send on negative delta
+ * @return                 Array index of action that should be performed, or -1 if none.
  */
-static int getWheelButton(int delta, int action_up, int action_dn)
+static int getWheelButton(int delta, int action_positive, int action_negative)
 {
 	if (delta > 0)
-		return action_up;
+		return action_positive;
 	else if (delta < 0)
-		return action_dn;
+		return action_negative;
 	else
 		return -1;
 }
@@ -531,9 +531,7 @@ static int getWheelButton(int delta, int action_up, int action_dn)
 /**
  * Send button or actions for a scrolling axis.
  *
- * @param button     X button number to send if no action is defined
  * @param action     Action to send
- * @param nactions   Length of action array
  */
 static void sendWheelStripEvent(WacomDevicePtr priv, const WacomAction *action,
 				const WacomDeviceState* ds, const WacomAxisData *axes)
@@ -573,12 +571,22 @@ static void sendWheelStripEvents(WacomDevicePtr priv, const WacomDeviceState* ds
 		sendWheelStripEvent(priv, &priv->strip_actions[idx], ds, axes);
 	}
 
-	/* emulate events for relative wheel */
+	/* emulate events for relative wheel:
+	 * positive delta = scroll up */
 	delta = getScrollDelta(ds->relwheel, 0, 0, 0);
 	idx = getWheelButton(delta, WHEEL_REL_UP, WHEEL_REL_DN);
 	if (idx >= 0 && (IsCursor(priv) || IsPad(priv)) && priv->oldState.proximity == ds->proximity)
 	{
 		DBG(10, priv, "Relative wheel scroll delta = %d\n", delta);
+		sendWheelStripEvent(priv, &priv->wheel_actions[idx], ds, axes);
+	}
+
+	/* emulate events for 2nd relative wheel */
+	delta = getScrollDelta(ds->relwheel2, 0, 0, 0);
+	idx = getWheelButton(delta, WHEEL2_REL_UP, WHEEL2_REL_DN);
+	if (idx >= 0 && (IsCursor(priv) || IsPad(priv)) && priv->oldState.proximity == ds->proximity)
+	{
+		DBG(10, priv, "Relative wheel 2 scroll delta = %d\n", delta);
 		sendWheelStripEvent(priv, &priv->wheel_actions[idx], ds, axes);
 	}
 
@@ -623,7 +631,7 @@ static void sendCommonEvents(WacomDevicePtr priv, const WacomDeviceState* ds,
 		wcmSendButtons(priv, ds, buttons, axes);
 
 	/* emulate wheel/strip events when defined */
-	if ( ds->relwheel || (ds->abswheel != priv->oldState.abswheel) || (ds->abswheel2 != priv->oldState.abswheel2) ||
+	if ( ds->relwheel || ds->relwheel2 || (ds->abswheel != priv->oldState.abswheel) || (ds->abswheel2 != priv->oldState.abswheel2) ||
 		( (ds->stripx - priv->oldState.stripx) && ds->stripx && priv->oldState.stripx) ||
 			((ds->stripy - priv->oldState.stripy) && ds->stripy && priv->oldState.stripy) )
 		sendWheelStripEvents(priv, ds, axes);
@@ -712,7 +720,7 @@ wcmSendPadEvents(WacomDevicePtr priv, const WacomDeviceState* ds, const WacomAxi
 	if (!priv->oldState.proximity && ds->proximity)
 		wcmEmitProximity(priv, TRUE, axes);
 
-	if (axes->mask || ds->buttons || ds->relwheel ||
+	if (axes->mask || ds->buttons || ds->relwheel || ds->relwheel2 ||
 	    (ds->abswheel != priv->oldState.abswheel) || (ds->abswheel2 != priv->oldState.abswheel2))
 	{
 		sendCommonEvents(priv, ds, axes);
@@ -1002,6 +1010,7 @@ wcmCheckSuppress(WacomCommonPtr common,
 	if (abs(dsOrig->abswheel  - dsNew->abswheel)  > suppress) goto out;
 	if (abs(dsOrig->abswheel2 - dsNew->abswheel2) > suppress) goto out;
 	if (dsNew->relwheel != 0) goto out;
+	if (dsNew->relwheel2 != 0) goto out;
 
 	returnV = SUPPRESS_ALL;
 
@@ -1077,7 +1086,7 @@ static Bool check_arbitrated_control(WacomDevicePtr priv, WacomDeviceStatePtr ds
 
 	if (IsPad(priv)) {
 		/* Pad may never be the "active" pointer controller */
-		DBG(6, priv, "Event from pad; not yielding pointer control\n.");
+		DBG(6, priv, "Event from pad; not yielding pointer control.\n");
 		return FALSE;
 	}
 
@@ -1138,7 +1147,7 @@ void wcmEvent(WacomCommonPtr common, unsigned int channel,
 
 	DBG(10, common,
 		"c=%u i=%d t=%d s=0x%x x=%d y=%d b=%u "
-		"p=%d rz=%d tx=%d ty=%d aw=%d aw2=%d rw=%d "
+		"p=%d rz=%d tx=%d ty=%d aw=%d aw2=%d rw=%d rw2=%d "
 		"t=%d px=%d st=%u cs=%d \n",
 		channel,
 		ds.device_id,
@@ -1146,7 +1155,7 @@ void wcmEvent(WacomCommonPtr common, unsigned int channel,
 		ds.serial_num,
 		ds.x, ds.y, ds.buttons,
 		ds.pressure, ds.rotation, ds.tiltx,
-		ds.tilty, ds.abswheel, ds.abswheel2, ds.relwheel, ds.throttle,
+		ds.tilty, ds.abswheel, ds.abswheel2, ds.relwheel, ds.relwheel2, ds.throttle,
 		ds.proximity, ds.sample,
 		pChannel->nSamples);
 
@@ -1995,6 +2004,12 @@ TEST_CASE(test_suppress)
 	rc = wcmCheckSuppress(&common, &old, &new);
 	assert(rc == SUPPRESS_NONE);
 	new.relwheel = 0;
+
+	/* any movement on relwheel2 counts */
+	new.relwheel2 = 1;
+	rc = wcmCheckSuppress(&common, &old, &new);
+	assert(rc == SUPPRESS_NONE);
+	new.relwheel2 = 0;
 
 	/* x axis movement */
 
