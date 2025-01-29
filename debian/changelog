@@ -1,3 +1,12 @@
+xf86-input-wacom (1.2.3-1) unstable; urgency=medium
+
+  * QA upload.
+  * Upload to unstable.
+  * debian/patches/31d3b745d630ed87ed25d1f44a6596c9968ffc0c.patch:
+    Cherry-pick upstream patch to fix installation of systemd unit.
+
+ -- Boyuan Yang <byang@debian.org>  Wed, 29 Jan 2025 11:17:20 -0500
+
 xf86-input-wacom (1.2.3-1~exp1) experimental; urgency=medium
 
   * QA upload.
