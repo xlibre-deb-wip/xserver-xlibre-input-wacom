@@ -35,5 +35,5 @@ Replaces:
 Conflicts:
  xserver-xorg-input-wacom,
  wacom-tools (<< 0.10.0),
-Description: X.Org X server -- Wacom input driver
- This package provides the X.Org driver for Wacom tablet devices.
+Description: XLibre X server -- Wacom input driver
+ This package provides the XLibre driver for Wacom tablet devices.
