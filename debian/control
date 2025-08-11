@@ -1,4 +1,4 @@
-Source: xf86-input-wacom
+Source: xserver-xlibre-input-wacom
 Section: x11
 Priority: optional
 Maintainer: apebl <a@pebl.cc>
