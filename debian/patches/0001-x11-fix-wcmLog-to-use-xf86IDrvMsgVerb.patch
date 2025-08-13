@@ -1,0 +1,41 @@
+From bb65266d0ce671a9f3d7623125855c4da43ecbae Mon Sep 17 00:00:00 2001
+From: tautvis <gtautvis gmail com>
+Date: Fri, 4 Jul 2025 23:40:14 +0300
+Subject: [PATCH] x11: fix wcmLog to use xf86IDrvMsgVerb
+
+fix wcmLog function to make use xf86IDrvMsgVerb, it is neccesarry as xf86VIDrvMsgVerb was unexported.
+---
+ src/x11/xf86Wacom.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/src/x11/xf86Wacom.c b/src/x11/xf86Wacom.c
+index adb1643..4c05b81 100644
+--- a/src/x11/xf86Wacom.c
++++ b/src/x11/xf86Wacom.c
+@@ -68,11 +68,20 @@ void
+ wcmLog(WacomDevicePtr priv, WacomLogType type, const char *format, ...)
+ {
+ 	MessageType xtype = (MessageType)type;
+-	va_list args;
+-
++	va_list args,args2;
+ 	va_start(args, format);
+-	xf86VIDrvMsgVerb(priv->frontend, xtype, 0, format, args);
++	va_copy(args2,args);
++
++	int str_size = vsnprintf(NULL, 0, format, args);
++	char *str = calloc(1, str_size + 1);
+ 	va_end(args);
++
++	vsnprintf(str,str_size + 1, format, args2);
++	va_end(args2);
++
++	xf86IDrvMsgVerb(priv->frontend, xtype, 0, "%s", str);
++
++	free(str);
+ }
+ 
+ void wcmLogSafe(WacomDevicePtr priv, WacomLogType type, const char *format, ...)
+-- 
+2.47.2
+
