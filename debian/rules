@@ -19,7 +19,7 @@ SYSTEMD_SYSTEM_DIR = $(shell pkg-config --variable=systemdsystemunitdir systemd)
 UDEV_RULES_D_DIR = $(shell pkg-config --variable=udevdir udev)/rules.d
 XORG_MODULE_DIR = /usr/lib/xorg/modules
 
-package = xserver-xorg-input-wacom
+package = xserver-xlibre-input-wacom
 XDEP = $(shell cat /usr/share/xserver-xorg/xinputdep)
 XSUB = debian/$(package).substvars
 
@@ -35,9 +35,9 @@ override_dh_auto_configure:
 
 execute_after_dh_auto_install:
 	# Purge .la files
-	$(RM) debian/xserver-xorg-input-wacom/usr/lib/xorg/modules/input/*.la
+	$(RM) debian/xserver-xlibre-input-wacom/usr/lib/xorg/modules/input/*.la
 	# Rename wacom udev rules with serial number
-	mv debian/xserver-xorg-input-wacom/$(UDEV_RULES_D_DIR)/wacom.rules debian/xserver-xorg-input-wacom/$(UDEV_RULES_D_DIR)/69-wacom.rules
+	mv debian/xserver-xlibre-input-wacom/$(UDEV_RULES_D_DIR)/wacom.rules debian/xserver-xlibre-input-wacom/$(UDEV_RULES_D_DIR)/69-wacom.rules
 	# Handle xinpdriver:*
 	echo "xinpdriver:Depends=$(XDEP)" > $(XSUB)
-	echo "xinpdriver:Provides=xorg-driver-input" >> $(XSUB)
+	echo "xinpdriver:Provides=xlibre-driver-input" >> $(XSUB)
