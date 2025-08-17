@@ -28,7 +28,7 @@ Depends:
 Suggests:
  xinput,
 Provides:
- xserver-xorg-input-wacom,
+ xserver-xorg-input-wacom (= ${binary:Version}),
  ${xinpdriver:Provides},
 Replaces:
  wacom-tools (<< 0.10.0),
