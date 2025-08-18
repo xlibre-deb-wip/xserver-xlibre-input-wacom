@@ -1,3 +1,10 @@
+xserver-xlibre-input-wacom (1.2.3.1-2) unstable; urgency=medium
+
+  * debian/control: Pin versions in Provides fields
+  * d/gbp.conf: Use xlibre/latest for debian-branch
+
+ -- apebl <a@pebl.cc>  Mon, 18 Aug 2025 07:12:56 +0000
+
 xserver-xlibre-input-wacom (1.2.3.1-1) unstable; urgency=low
 
   * Initial release.
