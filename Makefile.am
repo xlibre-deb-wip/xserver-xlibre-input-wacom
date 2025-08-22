@@ -20,6 +20,7 @@
 
 # Provide an sdk location that is known to be writable
 DISTCHECK_CONFIGURE_FLAGS = --with-sdkdir='$${includedir}/xorg' \
+			    --with-xorg-module-dir='$${libdir}/xorg/modules' \
 			    --with-xorg-conf-dir='$${datadir}/X11/xorg.conf.d'
 
 SUBDIRS = conf src man include tools test
