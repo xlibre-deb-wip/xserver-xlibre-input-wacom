@@ -1,3 +1,10 @@
+xserver-xlibre-input-wacom (1.2.3.2-1) unstable; urgency=medium
+
+  * New upstream version 1.2.3.2
+  * patches: Drop x11-fix-wcmLog, fixed upstream
+
+ -- apebl <a@pebl.cc>  Sat, 23 Aug 2025 00:51:01 +0000
+
 xserver-xlibre-input-wacom (1.2.3.1-2) unstable; urgency=medium
 
   * debian/control: Pin versions in Provides fields
